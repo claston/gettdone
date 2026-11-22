@@ -334,6 +334,14 @@ a {
 .app-content {
   min-width: 0;
 }
+.app-sidebar .nav-section {
+  margin: 18px 12px 7px;
+  color: var(--ink-500);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
 .app-topbar {
   height: 66px;
   padding: 0 28px;

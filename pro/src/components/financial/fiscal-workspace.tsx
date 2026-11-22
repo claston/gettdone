@@ -35,6 +35,7 @@ type Props = {
   initialMovementId?: string;
   onSaved?: () => void;
   onUploadInteractionChange?: (active: boolean) => void;
+  documentsOnly?: boolean;
 };
 
 export function FiscalWorkspace({
@@ -45,6 +46,7 @@ export function FiscalWorkspace({
   initialMovementId,
   onSaved,
   onUploadInteractionChange,
+  documentsOnly = false,
 }: Props) {
   const [offset, setOffset] = useState(0);
   const [selectedId, setSelectedId] = useState("");
@@ -319,7 +321,9 @@ export function FiscalWorkspace({
       className={styles.panel}
       aria-label={
         mode === "invoices"
-          ? "Notas e conciliação"
+          ? documentsOnly
+            ? "Notas fiscais"
+            : "Notas e conciliação"
           : mode === "taxes"
             ? "Gestão Tributária"
             : "Faturamento estimado"
@@ -329,14 +333,18 @@ export function FiscalWorkspace({
         <div>
           <h2>
             {mode === "invoices"
-              ? "Notas e conciliação"
+              ? documentsOnly
+                ? "Notas fiscais"
+                : "Notas e conciliação"
               : mode === "taxes"
                 ? "Gestão Tributária"
                 : "Faturamento estimado"}
           </h2>
           <p>
             {mode === "invoices"
-              ? "Relacione notas aos pagamentos e recebimentos da empresa."
+              ? documentsOnly
+                ? "Importe e confira as notas deste cliente, independentemente do mês de emissão."
+                : "Relacione notas aos pagamentos e recebimentos da empresa."
               : mode === "taxes"
                 ? "Classifique pagamentos tributários e confira o que ainda precisa de identificação."
                 : "Confira separadamente as vendas documentadas e os recebimentos identificados."}
@@ -393,19 +401,21 @@ export function FiscalWorkspace({
       )}
       {data && (
         <>
-          {data.truncated && (
+          {!documentsOnly && data.truncated && (
             <p role="alert">
               Há mais de 10.000 movimentos. Filtre uma conta para conferir os
               totais.
             </p>
           )}
-          <p className={styles.notice}>
-            A cobertura depende dos documentos acessíveis. Notas seguem a data
-            de emissão; movimentos seguem a data bancária.
-            {account &&
-              " O filtro de conta aplica-se aos movimentos; as notas pertencem à empresa."}
-          </p>
-          {data.classification_shadow_enabled && (
+          {!documentsOnly && (
+            <p className={styles.notice}>
+              A cobertura depende dos documentos acessíveis. Notas seguem a data
+              de emissão; movimentos seguem a data bancária.
+              {account &&
+                " O filtro de conta aplica-se aos movimentos; as notas pertencem à empresa."}
+            </p>
+          )}
+          {!documentsOnly && data.classification_shadow_enabled && (
             <ClassificationShadow
               key={clientId}
               clientId={clientId}
@@ -632,157 +642,167 @@ export function FiscalWorkspace({
                       )
                     }
                   />
-                  <h3>Correspondências sugeridas</h3>
-                  {!data.suggestions.length && (
-                    <p>
-                      Não há sugestões neste mês e conta. É possível selecionar
-                      um movimento manualmente.
-                    </p>
-                  )}
-                  {data.suggestions.map((suggestion) => (
-                    <div
-                      className={styles.suggestion}
-                      key={suggestion.movement_id}
-                    >
-                      <div>
-                        <strong>{suggestion.movement.description}</strong>
+                  {!documentsOnly && (
+                    <>
+                      <h3>Correspondências sugeridas</h3>
+                      {!data.suggestions.length && (
                         <p>
-                          {dateLabel(suggestion.movement.date)} ·{" "}
-                          {money(suggestion.movement.amount)}
+                          Não há sugestões neste mês e conta. É possível
+                          selecionar um movimento manualmente.
                         </p>
-                        <small>
-                          {suggestion.evidence
-                            .map((value) => evidence[value] ?? value)
-                            .join(" · ")}
-                          {suggestion.confidence === "weak"
-                            ? " · Evidência limitada"
-                            : ""}
-                        </small>
-                      </div>
-                      <button
-                        className="secondary-button"
-                        disabled={busy}
-                        onClick={() => {
-                          setChosenMovement(suggestion.movement);
-                          setAllocation(suggestion.amount);
-                        }}
-                      >
-                        Conferir vínculo
-                      </button>
-                    </div>
-                  ))}
-                  <label>
-                    Movimento para vincular
-                    <select
-                      aria-label="Movimento para vincular"
-                      value={candidate?.id ?? ""}
-                      onChange={(event) => {
-                        const row =
-                          data.movements.find(
-                            (item) => item.id === event.target.value,
-                          ) ?? null;
-                        setChosenMovement(row);
-                        setAllocation(row?.amount.replace("-", "") ?? "");
-                      }}
-                    >
-                      <option value="">
-                        Selecione um movimento desta página
-                      </option>
-                      {candidate &&
-                        !data.movements.some(
-                          (row) => row.id === candidate.id,
-                        ) && (
-                          <option value={candidate.id}>
-                            {candidate.description}
-                          </option>
-                        )}
-                      {data.movements.map((row) => (
-                        <option value={row.id} key={row.id}>
-                          {dateLabel(row.date)} · {row.description} ·{" "}
-                          {money(row.amount, row.currency)}
-                        </option>
+                      )}
+                      {data.suggestions.map((suggestion) => (
+                        <div
+                          className={styles.suggestion}
+                          key={suggestion.movement_id}
+                        >
+                          <div>
+                            <strong>{suggestion.movement.description}</strong>
+                            <p>
+                              {dateLabel(suggestion.movement.date)} ·{" "}
+                              {money(suggestion.movement.amount)}
+                            </p>
+                            <small>
+                              {suggestion.evidence
+                                .map((value) => evidence[value] ?? value)
+                                .join(" · ")}
+                              {suggestion.confidence === "weak"
+                                ? " · Evidência limitada"
+                                : ""}
+                            </small>
+                          </div>
+                          <button
+                            className="secondary-button"
+                            disabled={busy}
+                            onClick={() => {
+                              setChosenMovement(suggestion.movement);
+                              setAllocation(suggestion.amount);
+                            }}
+                          >
+                            Conferir vínculo
+                          </button>
+                        </div>
                       ))}
-                    </select>
-                  </label>
-                  <div className={styles.actions}>
-                    <label>
-                      Valor a vincular (R$)
-                      <input
-                        inputMode="decimal"
-                        value={allocation}
-                        onChange={(event) => setAllocation(event.target.value)}
-                      />
-                    </label>
-                    <button
-                      className="primary-button"
-                      disabled={
-                        busy ||
-                        !candidate ||
-                        note.review_required ||
-                        note.direction === "unconfirmed"
-                      }
-                      onClick={() =>
-                        candidate &&
-                        void action(() =>
-                          command("/fiscal/links", {
-                            document_id: note.id,
-                            movement_id: candidate.id,
-                            amount: allocation.replace(",", "."),
-                            document_version: note.version,
-                            movement_version: candidate.version,
-                          }),
-                        )
-                      }
-                    >
-                      Confirmar vínculo
-                    </button>
-                  </div>
-                  <p>
-                    É possível vincular parte do valor. Diferenças continuam
-                    pendentes; valores do extrato não são ajustados.
-                  </p>
+                      <label>
+                        Movimento para vincular
+                        <select
+                          aria-label="Movimento para vincular"
+                          value={candidate?.id ?? ""}
+                          onChange={(event) => {
+                            const row =
+                              data.movements.find(
+                                (item) => item.id === event.target.value,
+                              ) ?? null;
+                            setChosenMovement(row);
+                            setAllocation(row?.amount.replace("-", "") ?? "");
+                          }}
+                        >
+                          <option value="">
+                            Selecione um movimento desta página
+                          </option>
+                          {candidate &&
+                            !data.movements.some(
+                              (row) => row.id === candidate.id,
+                            ) && (
+                              <option value={candidate.id}>
+                                {candidate.description}
+                              </option>
+                            )}
+                          {data.movements.map((row) => (
+                            <option value={row.id} key={row.id}>
+                              {dateLabel(row.date)} · {row.description} ·{" "}
+                              {money(row.amount, row.currency)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className={styles.actions}>
+                        <label>
+                          Valor a vincular (R$)
+                          <input
+                            inputMode="decimal"
+                            value={allocation}
+                            onChange={(event) =>
+                              setAllocation(event.target.value)
+                            }
+                          />
+                        </label>
+                        <button
+                          className="primary-button"
+                          disabled={
+                            busy ||
+                            !candidate ||
+                            note.review_required ||
+                            note.direction === "unconfirmed"
+                          }
+                          onClick={() =>
+                            candidate &&
+                            void action(() =>
+                              command("/fiscal/links", {
+                                document_id: note.id,
+                                movement_id: candidate.id,
+                                amount: allocation.replace(",", "."),
+                                document_version: note.version,
+                                movement_version: candidate.version,
+                              }),
+                            )
+                          }
+                        >
+                          Confirmar vínculo
+                        </button>
+                      </div>
+                      <p>
+                        É possível vincular parte do valor. Diferenças continuam
+                        pendentes; valores do extrato não são ajustados.
+                      </p>
+                    </>
+                  )}
                 </>
               )}
-              <h3>Vínculos registrados</h3>
-              {data.links
-                .filter(
-                  (link) =>
-                    (!selectedId || link.document_id === selectedId) &&
-                    (!initialMovementId ||
-                      link.movement_id === initialMovementId),
-                )
-                .map((link) => (
-                  <div className={styles.suggestion} key={link.id}>
-                    <span>
-                      Nota{" "}
-                      {data.documents.find(
-                        (item) => item.id === link.document_id,
-                      )?.number ?? "a conferir"}
-                      {" · "}
-                      {dateLabel(link.movement_date)} ·{" "}
-                      {link.movement_description}
-                      {" · "}
-                      {money(link.amount, link.currency)} ·{" "}
-                      {link.state === "confirmed"
-                        ? "Vínculo confirmado"
-                        : "Origem alterada: revisar vínculo"}
-                    </span>
-                    <button
-                      className="secondary-button"
-                      disabled={busy}
-                      onClick={() =>
-                        void action(() =>
-                          command(`/fiscal/links/${link.id}/undo`, {
-                            expected_version: link.version,
-                          }),
-                        )
-                      }
-                    >
-                      Desfazer vínculo
-                    </button>
-                  </div>
-                ))}
-              {!data.links.length && <p>Nenhum vínculo registrado.</p>}
+              {!documentsOnly && (
+                <>
+                  <h3>Vínculos registrados</h3>
+                  {data.links
+                    .filter(
+                      (link) =>
+                        (!selectedId || link.document_id === selectedId) &&
+                        (!initialMovementId ||
+                          link.movement_id === initialMovementId),
+                    )
+                    .map((link) => (
+                      <div className={styles.suggestion} key={link.id}>
+                        <span>
+                          Nota{" "}
+                          {data.documents.find(
+                            (item) => item.id === link.document_id,
+                          )?.number ?? "a conferir"}
+                          {" · "}
+                          {dateLabel(link.movement_date)} ·{" "}
+                          {link.movement_description}
+                          {" · "}
+                          {money(link.amount, link.currency)} ·{" "}
+                          {link.state === "confirmed"
+                            ? "Vínculo confirmado"
+                            : "Origem alterada: revisar vínculo"}
+                        </span>
+                        <button
+                          className="secondary-button"
+                          disabled={busy}
+                          onClick={() =>
+                            void action(() =>
+                              command(`/fiscal/links/${link.id}/undo`, {
+                                expected_version: link.version,
+                              }),
+                            )
+                          }
+                        >
+                          Desfazer vínculo
+                        </button>
+                      </div>
+                    ))}
+                  {!data.links.length && <p>Nenhum vínculo registrado.</p>}
+                </>
+              )}
             </>
           )}
           {mode !== "invoices" && (
@@ -819,41 +839,43 @@ export function FiscalWorkspace({
               )}
             </>
           )}
-          <div className={styles.actions}>
-            {!initialMovementId && offset > 0 && (
+          {!documentsOnly && (
+            <div className={styles.actions}>
+              {!initialMovementId && offset > 0 && (
+                <button
+                  className="secondary-button"
+                  onClick={() => setOffset(Math.max(0, offset - 50))}
+                >
+                  Página anterior
+                </button>
+              )}
+              {!initialMovementId && data.next_offset !== null && (
+                <button
+                  className="secondary-button"
+                  onClick={() => setOffset(data.next_offset!)}
+                >
+                  Próxima página de movimentos
+                </button>
+              )}
               <button
                 className="secondary-button"
-                onClick={() => setOffset(Math.max(0, offset - 50))}
+                disabled={busy || data.truncated}
+                onClick={() =>
+                  void action(
+                    () =>
+                      downloadFiscal(
+                        clientId,
+                        `export?${new URLSearchParams({ month, ...(account ? { account } : {}) })}`,
+                        "fiscal.csv",
+                      ),
+                    false,
+                  )
+                }
               >
-                Página anterior
+                Exportar conferência CSV
               </button>
-            )}
-            {!initialMovementId && data.next_offset !== null && (
-              <button
-                className="secondary-button"
-                onClick={() => setOffset(data.next_offset!)}
-              >
-                Próxima página de movimentos
-              </button>
-            )}
-            <button
-              className="secondary-button"
-              disabled={busy || data.truncated}
-              onClick={() =>
-                void action(
-                  () =>
-                    downloadFiscal(
-                      clientId,
-                      `export?${new URLSearchParams({ month, ...(account ? { account } : {}) })}`,
-                      "fiscal.csv",
-                    ),
-                  false,
-                )
-              }
-            >
-              Exportar conferência CSV
-            </button>
-          </div>
+            </div>
+          )}
           {busy && <p role="status">Salvando…</p>}
         </>
       )}

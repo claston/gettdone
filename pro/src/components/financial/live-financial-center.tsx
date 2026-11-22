@@ -345,7 +345,9 @@ export function LiveFinancialCenter({
     <main className={styles.page}>
       <div className={styles.demoNotice}>
         <strong>Consulta de movimentos bancários</strong>
-        <span>Correções dos valores bancários continuam no conversor PRO.</span>
+        <span>
+          Confira e corrija os valores na revisão do documento de origem.
+        </span>
       </div>
       <div className={styles.breadcrumb}>
         <Link href="/dashboard">Clientes</Link>
@@ -369,6 +371,17 @@ export function LiveFinancialCenter({
           Atualizar
         </button>
       </header>
+      <nav className={styles.tabs} aria-label="Áreas do cliente">
+        <Link href={`/documents?client=${encodeURIComponent(clientId)}`}>
+          Documentos
+        </Link>
+        <Link
+          href={`/financial/${encodeURIComponent(clientId)}`}
+          aria-current="page"
+        >
+          Central Financeira
+        </Link>
+      </nav>
       <section className={styles.context} aria-label="Contexto financeiro">
         <div className={styles.month}>
           <button
@@ -428,8 +441,11 @@ export function LiveFinancialCenter({
             <p className={styles.warning} role="status">
               {missingStatementsMessage(data)} Os totais podem estar
               incompletos.{" "}
-              <Link href="/dashboard" className={styles.sourceLink}>
-                Conferir extratos em Clientes
+              <Link
+                href={`/documents?client=${encodeURIComponent(clientId)}`}
+                className={styles.sourceLink}
+              >
+                Conferir documentos do cliente
               </Link>
             </p>
           )}

@@ -151,13 +151,13 @@ function ReviewRail({ userName }: { userName: string }) {
       >
         <Zap size={20} fill="currentColor" />
       </Link>
-      <Link href="/conversions" className="rail-link" aria-label="Conversões">
+      <Link href="/conversions" className="rail-link" aria-label="Conversor">
         <FileText size={20} />
       </Link>
       <Link
         href="/dashboard"
         className="rail-link"
-        aria-label="Voltar ao dashboard"
+        aria-label="Voltar aos clientes"
       >
         <Menu size={20} />
       </Link>
@@ -171,6 +171,7 @@ function ReviewRail({ userName }: { userName: string }) {
 
 function ConversionNavigator({
   clientMode = false,
+  documentMode = false,
   conversions,
   activeId,
   collapsed,
@@ -179,6 +180,7 @@ function ConversionNavigator({
   onNext,
 }: {
   clientMode?: boolean;
+  documentMode?: boolean;
   conversions: Conversion[];
   activeId: string;
   collapsed: boolean;
@@ -219,7 +221,11 @@ function ConversionNavigator({
         <button
           className="icon-button"
           onClick={onCollapse}
-          aria-label="Expandir lista de conversões"
+          aria-label={
+            documentMode
+              ? "Expandir lista de documentos"
+              : "Expandir lista de conversões"
+          }
         >
           <PanelLeftOpen size={18} />
         </button>
@@ -233,16 +239,25 @@ function ConversionNavigator({
       <div className="panel-heading compact">
         <div>
           <span className="eyebrow">
-            {clientMode ? "Extratos do cliente" : "Navegação do lote"}
+            {documentMode
+              ? "Documentos recebidos"
+              : clientMode
+                ? "Extratos do cliente"
+                : "Navegação do lote"}
           </span>
           <h2>
-            Conversões <span>{conversions.length}</span>
+            {documentMode ? "Documentos" : "Conversões"}{" "}
+            <span>{conversions.length}</span>
           </h2>
         </div>
         <button
           className="icon-button"
           onClick={onCollapse}
-          aria-label="Recolher lista de conversões"
+          aria-label={
+            documentMode
+              ? "Recolher lista de documentos"
+              : "Recolher lista de conversões"
+          }
         >
           <PanelLeftClose size={18} />
         </button>
@@ -254,10 +269,17 @@ function ConversionNavigator({
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Buscar arquivo ou banco"
-            aria-label="Buscar conversões"
+            aria-label={
+              documentMode ? "Buscar documentos" : "Buscar conversões"
+            }
           />
         </label>
-        <label className="select-box" aria-label="Filtrar conversões">
+        <label
+          className="select-box"
+          aria-label={
+            documentMode ? "Filtrar documentos" : "Filtrar conversões"
+          }
+        >
           <Filter size={14} />
           <select
             value={filter}
@@ -274,7 +296,13 @@ function ConversionNavigator({
       <div
         className="conversion-list"
         role="listbox"
-        aria-label={clientMode ? "Extratos do cliente" : "Conversões do lote"}
+        aria-label={
+          documentMode
+            ? "Documentos do envio"
+            : clientMode
+              ? "Extratos do cliente"
+              : "Conversões do lote"
+        }
         tabIndex={0}
         onKeyDown={handleKeyDown}
       >
@@ -308,7 +336,11 @@ function ConversionNavigator({
           </button>
         ))}
         {ordered.length === 0 && (
-          <div className="empty-list">Nenhuma conversão encontrada.</div>
+          <div className="empty-list">
+            {documentMode
+              ? "Nenhum documento encontrado."
+              : "Nenhuma conversão encontrada."}
+          </div>
         )}
       </div>
       <button className="next-pending" onClick={onNext}>
@@ -569,17 +601,23 @@ export function WorkspaceScreen({
             {reviewReturnTo(returnTo).startsWith("/demo/financial/") ||
             reviewReturnTo(returnTo).startsWith("/financial/")
               ? "Voltar à Central Financeira"
-              : clientMode || returnTo === "/dashboard"
-                ? "Clientes"
-                : returnTo
-                  ? reviewReturnTo(returnTo).startsWith("/works/")
-                    ? "Voltar ao trabalho"
-                    : "Voltar às conversões"
-                  : "Lotes"}
+              : reviewReturnTo(returnTo).startsWith("/documents")
+                ? "Voltar aos documentos"
+                : clientMode || returnTo === "/dashboard"
+                  ? "Clientes"
+                  : returnTo
+                    ? reviewReturnTo(returnTo).startsWith("/works/")
+                      ? "Voltar ao trabalho"
+                      : "Voltar ao Conversor"
+                    : "Lotes"}
           </Link>
           <div>
             <span className="eyebrow">{batch.clientName}</span>
-            <h1>{batch.name}</h1>
+            <h1>
+              {reviewReturnTo(returnTo).startsWith("/documents")
+                ? "Revisão de documentos"
+                : batch.name}
+            </h1>
           </div>
           {dataMode === "demo" && (
             <span className="demo-badge">Dados de demonstração</span>
@@ -722,6 +760,7 @@ export function WorkspaceScreen({
       </div>
       <div className="workspace-body" inert={busy}>
         <ConversionNavigator
+          documentMode={reviewReturnTo(returnTo).startsWith("/documents")}
           clientMode={clientMode}
           conversions={batch.conversions}
           activeId={activeConversion?.id ?? ""}

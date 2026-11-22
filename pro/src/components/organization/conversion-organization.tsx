@@ -16,12 +16,13 @@ import styles from "./organization.module.css";
 const statuses: Record<string, string> = {
   uploading: "Aguardando envio",
   uploaded: "Enviado",
-  queued: "Na fila",
+  queued: "Aguardando leitura",
   running: "Processando",
   retrying: "Tentando novamente",
   completed: "Concluído",
   failed: "Falhou",
   expired: "Expirado",
+  unavailable: "Arquivo indisponível",
 };
 
 export function ConversionOrganization({
@@ -34,6 +35,7 @@ export function ConversionOrganization({
   selected = false,
   onSelect,
   returnTo,
+  documentMode = false,
   onCatalogChanged = async () => {},
 }: {
   item: OrganizedConversion;
@@ -45,6 +47,7 @@ export function ConversionOrganization({
   selected?: boolean;
   onSelect?(checked: boolean): void;
   returnTo?: string;
+  documentMode?: boolean;
   onCatalogChanged?(): Promise<void>;
 }) {
   const [draft, setDraft] = useState(item.context);
@@ -122,33 +125,34 @@ export function ConversionOrganization({
               (item.context.client_id ? "Cliente a carregar" : "Sem cliente")}
           </span>
           {account && <span>{account.name}</span>}
-          {periods.length ? (
-            periods.map((period) => (
-              <span key={period.id}>
-                {period.name}
-                {item.context.client_id && (
-                  <>
-                    {" "}
-                    ·{" "}
-                    <Link
-                      href={`/works?client=${encodeURIComponent(item.context.client_id)}&period=${encodeURIComponent(period.id)}`}
-                    >
-                      Abrir trabalho
-                    </Link>
-                  </>
-                )}
+          {!documentMode &&
+            (periods.length ? (
+              periods.map((period) => (
+                <span key={period.id}>
+                  {period.name}
+                  {item.context.client_id && (
+                    <>
+                      {" "}
+                      ·{" "}
+                      <Link
+                        href={`/works?client=${encodeURIComponent(item.context.client_id)}&period=${encodeURIComponent(period.id)}`}
+                      >
+                        Abrir trabalho
+                      </Link>
+                    </>
+                  )}
+                </span>
+              ))
+            ) : (
+              <span>
+                {item.context.period_ids.length
+                  ? "Períodos a carregar"
+                  : "Período de trabalho não definido"}
               </span>
-            ))
-          ) : (
-            <span>
-              {item.context.period_ids.length
-                ? "Períodos a carregar"
-                : "Período de trabalho não definido"}
-            </span>
-          )}
+            ))}
         </div>
       )}
-      {showOrganization && (
+      {showOrganization && !documentMode && (
         <p className={styles.hint}>
           {periodEvidence?.document_coverage
             ? `Período do documento: ${formatDate(periodEvidence.start_date)} a ${formatDate(periodEvidence.end_date)}.`

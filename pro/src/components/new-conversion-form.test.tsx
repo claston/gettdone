@@ -11,6 +11,33 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("NewConversionForm", () => {
+  it("mantém o cliente na importação e não reenvia o lote ao abrir os documentos", async () => {
+    const service = {
+      createAndSubmit: vi.fn().mockResolvedValue({ batchId: "batch_import" }),
+    };
+    render(
+      <NewConversionForm
+        service={service}
+        importContext={{ clientId: "client_a", clientName: "Cliente A" }}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Selecionar arquivos"), {
+      target: { files: [new File(["a"], "extrato.csv")] },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Importar documentos" }),
+    );
+    await waitFor(() =>
+      expect(push).toHaveBeenCalledWith(
+        "/documents?batch=batch_import&client=client_a",
+      ),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ver documentos enviados" }),
+    );
+    await waitFor(() => expect(push).toHaveBeenCalledTimes(2));
+    expect(service.createAndSubmit).toHaveBeenCalledTimes(1);
+  });
   it("retoma o vínculo do trabalho sem criar ou cobrar um segundo lote", async () => {
     const service = {
       createAndSubmit: vi.fn().mockResolvedValue({ batchId: "batch-once" }),

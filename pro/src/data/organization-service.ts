@@ -5,6 +5,7 @@ import {
 } from "./pro-api-client";
 
 export interface OrganizationClient {
+  updated_at?: string;
   id: string;
   name: string;
   tax_id: string | null;
@@ -129,7 +130,7 @@ export function createOrganizationService(
       throw new Error(
         await readApiError(
           response,
-          "Não foi possível carregar a organização de conversões.",
+          "Não foi possível concluir a operação. Tente novamente.",
         ),
       );
     return response.json() as Promise<T>;

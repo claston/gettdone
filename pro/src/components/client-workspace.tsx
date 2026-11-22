@@ -25,7 +25,7 @@ export function ClientWorkspace({
       initialConversionId={conversionId}
       repository={repository}
       clientMode
-      returnTo="/dashboard"
+      returnTo={`/documents?client=${encodeURIComponent(clientId)}&type=statements`}
     />
   );
 }

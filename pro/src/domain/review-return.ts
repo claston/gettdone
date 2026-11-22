@@ -7,6 +7,14 @@ export function reviewReturnTo(value: unknown): string {
   } catch {
     return fallback;
   }
+  if (url.origin === "https://ofx.local" && url.pathname === "/documents") {
+    const query = new URLSearchParams();
+    for (const key of ["client", "type", "batch"]) {
+      const item = url.searchParams.get(key);
+      if (item) query.set(key, item);
+    }
+    return `/documents${query.size ? `?${query}` : ""}`;
+  }
   if (
     url.origin === "https://ofx.local" &&
     (/^\/demo\/financial\/[a-z]+$/.test(url.pathname) ||

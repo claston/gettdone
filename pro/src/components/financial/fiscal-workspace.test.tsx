@@ -109,6 +109,30 @@ it("mostra o envio imediatamente e acompanha o arquivo recebido", async () => {
   ).toBeEnabled();
 });
 
+it("oferece importação e revisão documental sem os controles de conciliação", async () => {
+  render(
+    <FiscalWorkspace
+      clientId="c1"
+      month="2026-11"
+      account=""
+      mode="invoices"
+      documentsOnly
+    />,
+  );
+  expect(
+    await screen.findByLabelText("Importar nota XML ou PDF"),
+  ).toBeEnabled();
+  expect(
+    screen.getByRole("heading", { name: "Notas fiscais" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("heading", { name: "Vínculos registrados" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Exportar conferência CSV" }),
+  ).not.toBeInTheDocument();
+});
+
 it.each(["ready", "failed"])(
   "consulta sem desmontar a tela e para ao receber %s",
   async (state) => {

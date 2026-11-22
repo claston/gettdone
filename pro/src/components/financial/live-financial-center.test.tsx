@@ -190,8 +190,8 @@ describe("Central canônica", () => {
         /conversor anterior|origem|suspens|0 extrato/,
       );
       expect(
-        screen.getByRole("link", { name: "Conferir extratos em Clientes" }),
-      ).toHaveAttribute("href", "/dashboard");
+        screen.getByRole("link", { name: "Conferir documentos do cliente" }),
+      ).toHaveAttribute("href", "/documents?client=client_test");
     },
   );
   it("não exibe aviso de extratos ausentes quando as contagens são zero", async () => {
@@ -199,7 +199,7 @@ describe("Central canônica", () => {
     await screen.findByRole("heading", { name: "Cliente real" });
     expect(screen.queryByText("Os totais podem estar incompletos.")).toBeNull();
     expect(
-      screen.queryByRole("link", { name: "Conferir extratos em Clientes" }),
+      screen.queryByRole("link", { name: "Conferir documentos do cliente" }),
     ).toBeNull();
   });
   it("aguarda a resolução do mês sem publicar um período provisório", async () => {

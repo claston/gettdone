@@ -33,13 +33,13 @@ def conversion_owner(
         access_control_service=access, authorization=authorization, explicit_user_token=None, access_cookie_token=access_cookie_token
     )
     if not token:
-        raise HTTPException(401, "Entre na sua conta para organizar conversões.")
+        raise HTTPException(401, "Entre na sua conta para acessar clientes e documentos.")
     try:
         identity = access.resolve_identity(anonymous_fingerprint=None, user_token=token)
     except InvalidUserTokenError:
         raise HTTPException(401, "Entre novamente na sua conta.") from None
     if identity.identity_type != "user" or not identity.batch_conversion_enabled:
-        raise HTTPException(403, "A organização de conversões exige acesso ativo ao PRO.")
+        raise HTTPException(403, "O acesso a clientes e documentos exige um plano PRO ativo.")
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["Vary"] = "Cookie, Authorization"
     return identity.identity_id
@@ -51,7 +51,7 @@ def organization_enabled() -> bool:
 
 def organization_owner(owner: str = Depends(conversion_owner)) -> str:
     if not organization_enabled():
-        raise HTTPException(503, "A organização de conversões ainda não está disponível. Seus arquivos continuam acessíveis.")
+        raise HTTPException(503, "Clientes e documentos ainda não estão disponíveis. Seus arquivos continuam acessíveis no Conversor.")
     return owner
 
 
