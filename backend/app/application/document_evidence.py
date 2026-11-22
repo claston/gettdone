@@ -1,6 +1,7 @@
 """Document evidence never creates bank movements or asserts fiscal/payment verification."""
 
 import re
+from datetime import datetime
 
 from app.application.document_type_classifier import BANK_RECEIPT, FISCAL_INVOICE, classify_document_type
 from app.application.normalization.text import normalize_upper_text
@@ -64,10 +65,18 @@ def parse_evidence_pages(pages, *, document_type=None):
                         line = normalize_upper_text(raw)
                         refs.append({"page": page_no, "line": next_line[0]})
                 money = re.search(r"(?<![\d.])([\d.]+,\d{2})(?!\d)", line) if amount_key else None
+                dates = {}
+                if label == 'Data informada':
+                    matches = re.findall(r'\b\d{1,2}/\d{2}/\d{4}\b', raw)
+                    if len(matches) == 1:
+                        try:
+                            dates['document_date'] = datetime.strptime(matches[0], '%d/%m/%Y').date().isoformat()
+                        except ValueError:
+                            pass
                 observations.append(
                     {
                         "observation_type": "document_field",
-                        "dates": {},
+                        "dates": dates,
                         "amounts": {amount_key: money[1].replace(".", "").replace(",", ".")} if money else {},
                         "attributes": {"label": label, "value": raw.strip()},
                         "source_refs": refs,
@@ -101,6 +110,10 @@ def parse_evidence_pages(pages, *, document_type=None):
 
 
 def parse_evidence_result(pages, *, native=False):
+    from app.application.office_scope import pro_documents_enabled
+
+    if not pro_documents_enabled():
+        return None
     document = parse_evidence_pages(pages)
     if document is None:
         return None

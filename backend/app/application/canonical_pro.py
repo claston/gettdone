@@ -14,7 +14,7 @@ from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConfli
 from app.application.parsers.pdf.layout_specific.wise import WISE_CURRENCIES
 
 logger = logging.getLogger(__name__)
-PAID_PLANS = {"essencial", "profissional", "escritorio"}
+PAID_PLANS = {"essencial", "profissional", "escritorio", "escritorio_documentos"}
 
 
 class CanonicalProService:
@@ -27,7 +27,8 @@ class CanonicalProService:
         plan = conn.execute(f'''SELECT 1 FROM {repo.p}user_plan_subscriptions s
             JOIN {repo.p}plan_versions p ON p.id = s.plan_version_id
             WHERE s.user_id=%s AND s.status='active' AND p.batch_conversion_enabled
-                AND p.code IN ('essencial','profissional','escritorio')''', (actor_id,)).fetchone()
+                AND p.code IN ('essencial','profissional','escritorio','escritorio_documentos')
+                        AND (p.code <> 'escritorio_documentos' OR s.ended_at::timestamptz > CURRENT_TIMESTAMP)''', (actor_id,)).fetchone()
         if not plan:
             raise AnalysisAccessDeniedError
 

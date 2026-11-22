@@ -404,7 +404,7 @@ class ReceivedStatements(OrganizationService):
                 + (" LIMIT ?" if limit else ""),
                 (organization, client_id, now, after, *((limit,) if limit else ())))]
 
-    def confirm(self, owner, job_id, *, expected_version, name, tax_id=None, client_id=None, now=None):
+    def confirm(self, owner, job_id, *, expected_version, name, tax_id=None, client_id=None, now=None, office_audit=False):
         now = _utc(now or datetime.now(timezone.utc))
         name = self._text(name)
         tax = normalized(tax_id)
@@ -435,6 +435,9 @@ class ReceivedStatements(OrganizationService):
             result = self.save_context_in_connection(conn, owner, job_id=job_id, client_id=client_id, account_id=account_id,
                                                      period_ids=periods, expected_version=expected_version)
             self._confirm_identity(conn, organization, client_id)
+            if office_audit:
+                from app.application.office_documents import OfficeReviews
+                OfficeReviews(self.db).associate(conn, owner, job_id, result, _utc(receipt['expires_at']))
             conn.commit()
         self._recover_movements(owner, job_id)
         return result

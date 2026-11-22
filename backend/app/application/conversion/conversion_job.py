@@ -27,6 +27,7 @@ class ConversionJob:
     preflight_result: DocumentPreflightResult
     batch_id: str | None = None
     ocr_mode: str = "standard"
+    product: str = "free"
 
     @classmethod
     def create(
@@ -40,9 +41,12 @@ class ConversionJob:
         idempotency_key: str | None = None,
         batch_id: str | None = None,
         ocr_mode: str = "standard",
+        product: str = "free",
     ) -> ConversionJob:
         if ocr_mode not in {"standard", "pro"}:
             raise ValueError("Unknown OCR mode")
+        if product not in {'free', 'pro'}:
+            raise ValueError('Unknown conversion product')
         resolved_job_id = (job_id or "").strip() or f"job_{uuid4().hex[:24]}"
         return cls(
             job_id=resolved_job_id,
@@ -55,6 +59,7 @@ class ConversionJob:
             ),
             batch_id=(batch_id or "").strip() or None,
             ocr_mode=ocr_mode,
+            product=product,
         )
 
 

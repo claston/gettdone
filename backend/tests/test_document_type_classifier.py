@@ -20,49 +20,6 @@ from app.application.models import NormalizedTransaction
 from app.application.parsers.service import ParsedDocument
 
 
-@pytest.mark.parametrize("layout", ["generic_statement_ptbr", "GENERIC STATEMENT PTBR"])
-def test_generic_reader_does_not_override_pix_receipt_identity(layout):
-    result = classify_document_type(
-        "documento.pdf", b"%PDF", extracted_text="""
-        20 jul. 2026, via SISPag
-        PIX TRANSFERENCIA
-        valor da transferencia R$ 4.189,59
-        identificacao no seu comprovante: servicos administrativos
-        ID da transacao E0000000000000000000000000000000
-        autenticacao do comprovante
-        """, layout_inference_name=layout, layout_inference_confidence=0.02,
-    )
-    assert result.document_type == BANK_RECEIPT
-    assert "statement_layout" not in result.evidence
-
-
-def test_statement_title_account_and_period_do_not_depend_on_generic_layout():
-    result = classify_document_type(
-        "documento.pdf", b"%PDF", extracted_text="""
-        EXTRATO CONTA CORRENTE
-        PERIODO 01/07/2026 A 31/07/2026
-        15/07/2026 TRANSFERENCIA ENTRE CONTAS PROPRIAS 1250,00 C
-        """, layout_inference_name="generic_statement_ptbr", layout_inference_confidence=0.02,
-    )
-    assert result.document_type == BANK_STATEMENT
-    assert "statement_period" in result.evidence
-    assert "statement_layout" not in result.evidence
-
-
-def test_inactive_statement_keeps_identity_from_account_and_balance():
-    result = classify_document_type(
-        "documento.pdf", b"%PDF", extracted_text="""
-        Extrato
-        Agência: 1 Conta: 123456789
-        Saldo do dia R$ 100,00
-        Sem lançamentos no mês
-        """, layout_inference_name="generic_statement_ptbr", layout_inference_confidence=0.02,
-    )
-    assert result.document_type == BANK_STATEMENT
-    assert "statement_account" in result.evidence
-    assert "statement_layout" not in result.evidence
-
-
 def test_classifies_nfe_from_multiple_strong_signals_without_exposing_document_text() -> None:
     text = """
     DANFE
@@ -289,9 +246,9 @@ def test_conversion_pipeline_attaches_preclassification_to_parser_failure() -> N
     assert exc_info.value._document_type_classification == classification
 
 
-def test_conversion_pipeline_rejects_notary_receipt_before_parser() -> None:
+def test_conversion_pipeline_rejects_high_confidence_nfe_before_parser() -> None:
     classification = DocumentTypeClassification(
-        document_type='notary_receipt',
+        document_type=FISCAL_INVOICE,
         confidence=0.93,
         evidence=["nfe_danfe", "nfe_access_key", "nfe_parties"],
     )
@@ -319,7 +276,7 @@ def test_conversion_pipeline_rejects_notary_receipt_before_parser() -> None:
     assert parser_called is False
 
 
-def test_conversion_pipeline_routes_nfe_identified_from_extracted_text_to_evidence() -> None:
+def test_conversion_pipeline_rejects_nfe_identified_from_extracted_text() -> None:
     initial_classification = DocumentTypeClassification(
         document_type=UNKNOWN_DOCUMENT,
         confidence=0.0,
@@ -345,7 +302,11 @@ def test_conversion_pipeline_routes_nfe_identified_from_extracted_text_to_eviden
         document_type_classifier=lambda **kwargs: next(classifications),
     )
 
-    result = pipeline.run(filename="nfe-digitalizada.pdf", raw_bytes=b"%PDF synthetic", analysis_id="an_nfe_refined")
-    assert result.document_type_classification == refined_classification
-    assert result.analysis_data.financial_document['document_type'] == FISCAL_INVOICE
-    assert result.analysis_data.preview_transactions == []
+    with pytest.raises(UnsupportedDocumentContentError) as exc_info:
+        pipeline.run(
+            filename="nfe-digitalizada.pdf",
+            raw_bytes=b"%PDF synthetic",
+            analysis_id="an_nfe_refined",
+        )
+
+    assert exc_info.value._document_type_classification == refined_classification

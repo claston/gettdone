@@ -71,7 +71,7 @@ def _build_quota_exceeded_detail(
         upgrade_url = None
     else:
         upgrade_url = "./planos.html?reason=quota"
-    return {
+    detail = {
         "code": "monthly_pages_quota_exceeded" if is_pages_mode else "weekly_quota_exceeded",
         "message": "Voce atingiu o limite mensal de páginas."
         if is_pages_mode
@@ -89,6 +89,10 @@ def _build_quota_exceeded_detail(
         "support_url": "./contato.html?reason=quota",
         "plan_name": getattr(identity, "plan_name", None),
     }
+    if quota_mode == 'document_conversion':
+        detail.update(code='monthly_document_quota_exceeded', upgrade_url=None,
+                      message='O limite de conversões do plano foi atingido. OFX, CSV e Excel continuam sem consumo no Escritório.')
+    return detail
 
 
 def _is_likely_corrupted_pdf_detail(detail: str) -> bool:

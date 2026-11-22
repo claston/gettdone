@@ -142,7 +142,9 @@ def test_worker_rechecks_current_subscription_with_shared_plan_query(active, mon
 
     def fetchone(conn, query, params):
         assert "JOIN plan_versions" in query and "ups.status = 'active'" in query
-        assert params == ("usr_paid",)
+        assert params[0] == "usr_paid" and len(params) == 2
+        assert "pv.code <> 'escritorio_documentos' OR ups.ended_at > ?" in query
+        assert datetime.fromisoformat(params[1]).tzinfo is not None
         return row if active else None
 
     monkeypatch.setattr(service, "_fetchone", fetchone)

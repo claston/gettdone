@@ -1,11 +1,18 @@
 import { createProApiClient, readApiError } from "./pro-api-client";
 import type { OrganizedConversion } from "./organization-service";
+import type { ManualVerification } from "./office-service";
 
 export type DocumentCategory =
   "all" | "statements" | "invoices" | "receipts" | "unclassified";
 export interface DocumentItem extends OrganizedConversion {
   category: DocumentCategory;
   expires_at: string;
+  source?: string;
+  verification?: ManualVerification;
+  is_bank?: boolean;
+  bank_reviewed?: boolean;
+  manual_association?: boolean;
+  parts?: { id: string; pages: number[]; requires_review: boolean }[];
 }
 export interface DocumentsPage {
   items: DocumentItem[];

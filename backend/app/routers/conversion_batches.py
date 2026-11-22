@@ -231,6 +231,12 @@ def create_conversion_batch(
     )
     files = [ConversionBatchFile(**item.model_dump()) for item in request.files]
     mode_options = {}
+    from app.security_baseline import read_bool_env
+
+    if _is_pro_batch_request(http_request) and read_bool_env('PRO_OFFICE_ENABLED', default=False):
+        mode_options['product'] = 'pro'
+    if _is_pro_batch_request(http_request) and identity.quota_mode == 'document_conversion' and not mode_options.get('product'):
+        raise HTTPException(503, 'A importação do plano Escritório está temporariamente indisponível. Tente novamente mais tarde.')
     if request.ocr_mode == "pro":
         from app.application.conversion.pro_conversion import ConversionProAccessError, ConversionProQuota
 
@@ -250,7 +256,12 @@ def create_conversion_batch(
         mode_options["ocr_mode"] = "pro"
     try:
         required_units = len(request.files) if identity.quota_mode == "conversion" else 1
-        access_control_service.ensure_quota_available(identity, required_units=required_units)
+        from app.application.office_billing import STRUCTURED_FORMATS, office_billing
+
+        if office_billing(identity, mode_options.get('product', 'free')):
+            required_units = sum(Path(item.filename).suffix.lower().lstrip('.') not in STRUCTURED_FORMATS for item in request.files)
+        if required_units:
+            access_control_service.ensure_quota_available(identity, required_units=required_units)
         prepared = active_service.create(
             identity=identity,
             files=files,
@@ -291,6 +302,9 @@ def create_conversion_batch(
         status=prepared.snapshot.batch.status.value,
         files_count=len(prepared.snapshot.jobs),
     )
+    if prepared.created and mode_options.get('product') == 'pro':
+        from app.application.office_telemetry import office_event
+        office_event(access_control_service, identity.identity_id, 'office_upload')
     return _prepared_response(prepared)
 
 

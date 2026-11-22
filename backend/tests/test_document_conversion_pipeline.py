@@ -18,7 +18,7 @@ from app.application.conversion.statement_parser import ParsedBankStatement, Par
 from app.application.conversion.uploaded_document import UploadedDocument, UploadedDocumentStage
 from app.application.conversion_pipeline import ConversionPipelineResult, OperationalPipelineSummary
 from app.application.document_extraction_models import ExtractedLine
-from app.application.document_type_classifier import DocumentTypeClassification
+from app.application.document_type_classifier import FISCAL_INVOICE, DocumentTypeClassification
 from app.application.errors import (
     InvalidFileContentError,
     MaxPagesPerFileExceededError,
@@ -650,13 +650,13 @@ def test_rejected_document_is_forwarded_to_recovery_with_classification_metadata
     assert call["error_subcode"] == "unsupported_document_type"
 
 
-def test_high_confidence_notary_receipt_is_rejected_before_document_extraction(monkeypatch) -> None:
+def test_high_confidence_nfe_is_rejected_before_document_extraction(monkeypatch) -> None:
     staged_path = Path(__file__).parent / "fixtures" / "document_conversion_pipeline_statement.csv"
     access_control_service = FakeAccessControlService()
     extractor = FakeDocumentExtractor()
     ai_dispatch = RecordingAIRecoveryDispatcher()
     classification = DocumentTypeClassification(
-        document_type='notary_receipt',
+        document_type=FISCAL_INVOICE,
         confidence=0.93,
         evidence=["nfe_danfe", "nfe_access_key", "nfe_parties"],
     )
@@ -695,7 +695,7 @@ def test_high_confidence_notary_receipt_is_rejected_before_document_extraction(m
     assert extractor.calls == []
     assert access_control_service.consumed_units == []
     recorded = access_control_service.recorded_user_conversions[-1]
-    assert recorded["document_type"] == 'notary_receipt'
+    assert recorded["document_type"] == FISCAL_INVOICE
     assert recorded["document_processing_decision"] == "rejected"
     assert ai_dispatch.failure_calls[0]["document_classification"] == classification
 

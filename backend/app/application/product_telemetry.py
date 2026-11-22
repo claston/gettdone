@@ -12,7 +12,8 @@ CLIENT_PRODUCT_EVENT_TYPES = (
     | WORKSPACE_EVENT_TYPES
     | COURSE_EVENT_TYPES
 )
-PRODUCT_EVENT_TYPES = CLIENT_PRODUCT_EVENT_TYPES | {"download"}
+PRODUCT_EVENT_TYPES = CLIENT_PRODUCT_EVENT_TYPES | {"download", "office_upload", "office_package_generated",
+    "office_document_verified", "office_activated", "office_renewed", "office_cancelled", "office_client_identified"}
 DOWNLOAD_FORMATS = frozenset({"ofx", "xlsx", "csv"})
 
 

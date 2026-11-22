@@ -18,10 +18,12 @@ export default async function Page({
   const batch = value("batch");
   return (
     <DocumentsPage
-      key={`${client}:${category}:${batch}`}
+      key={`${client}:${category}:${batch}:${value("month")}:${value("account")}`}
       clientId={client}
       category={category}
       batchId={batch}
+      month={value("month")}
+      accountId={value("account")}
       financialCenterVisible={financialCenterVisible}
     />
   );

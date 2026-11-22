@@ -200,6 +200,7 @@ class FilesystemConversionJobRepository:
                 "preflight_result": asdict(record.job.preflight_result),
                 "batch_id": record.job.batch_id,
                 "ocr_mode": record.job.ocr_mode,
+                "product": record.job.product,
             },
             "status": record.status.value,
             "created_at": record.created_at.isoformat(),
@@ -223,6 +224,7 @@ class FilesystemConversionJobRepository:
             preflight_result=DocumentPreflightResult(**job_payload["preflight_result"]),
             batch_id=job_payload.get("batch_id"),
             ocr_mode=job_payload.get("ocr_mode", "standard"),
+            product=job_payload.get('product', 'free'),
         )
         return ConversionJobRecord(
             job=job,

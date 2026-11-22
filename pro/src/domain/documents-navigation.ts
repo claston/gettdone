@@ -12,10 +12,14 @@ export function documentsUrl(
   client = "",
   type: DocumentCategory = "all",
   batch = "",
+  month = "",
+  account = "",
 ) {
   const query = new URLSearchParams();
   if (client) query.set("client", client);
   if (type !== "all") query.set("type", type);
   if (batch) query.set("batch", batch);
+  if (month) query.set("month", month);
+  if (account) query.set("account", account);
   return `/documents${query.size ? `?${query}` : ""}`;
 }

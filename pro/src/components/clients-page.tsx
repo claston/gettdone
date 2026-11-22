@@ -10,17 +10,33 @@ import {
 } from "@/data/organization-service";
 import { receivedService } from "@/data/received-statements-service";
 import styles from "./documents/documents.module.css";
+import { useOfficeEnabled } from "./documents/office-controls";
+import {
+  OfficeMonthFilter,
+  OfficeClientCounts,
+  useOfficeMonth,
+} from "./documents/office-month";
+import {
+  useAvailableImports,
+  documentAvailability,
+} from "./use-available-imports";
+import { documentsUrl } from "@/domain/documents-navigation";
 
 export function ClientsPage({
   service = organizationService,
   financialCenterVisible = false,
+  month = "",
 }: {
   service?: OrganizationService;
   financialCenterVisible?: boolean;
+  month?: string;
 }) {
   const [catalog, setCatalog] = useState<OrganizationCatalog | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
+  const office = useOfficeEnabled();
+  const monthly = useOfficeMonth(office, month, attempt);
+  const monthlyRows = useAvailableImports(monthly?.items, documentAvailability);
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<OrganizationClient | "new" | null>(
     null,
@@ -94,6 +110,25 @@ export function ClientsPage({
       {editing === "new" && (
         <ClientForm service={service} onCancel={closeForm} onSaved={onSaved} />
       )}
+      {office && <OfficeMonthFilter month={month} />}
+      {office && !monthly && (
+        <p role="status">Consultando documentos do mês…</p>
+      )}
+      {monthly?.error && <p role="alert">{monthly.error}</p>}
+      {monthly?.partial && (
+        <p role="status">
+          Contagem parcial: há mais documentos. Abra a lista do cliente para
+          consultar os demais.
+        </p>
+      )}
+      {monthly &&
+        !monthly.error &&
+        monthlyRows.some((i) => !i.context.client_id) && (
+          <Link href={documentsUrl("unassigned", "all", "", month)}>
+            {monthlyRows.filter((i) => !i.context.client_id).length} com
+            identificação pendente — conferir documentos
+          </Link>
+        )}
       {error ? (
         <div role="alert">
           <p>{error}</p>
@@ -123,16 +158,21 @@ export function ClientsPage({
                 <div>
                   <Link
                     className={styles.clientName}
-                    href={`/documents?client=${encodeURIComponent(client.id)}`}
+                    href={documentsUrl(client.id, "all", "", month)}
                   >
                     {client.name}
                   </Link>
                   <p>{client.tax_id || "CPF/CNPJ não informado"}</p>
+                  {monthly && !monthly.error && (
+                    <OfficeClientCounts
+                      items={monthlyRows.filter(
+                        (i) => i.context.client_id === client.id,
+                      )}
+                    />
+                  )}
                 </div>
                 <div className={styles.actions}>
-                  <Link
-                    href={`/documents?client=${encodeURIComponent(client.id)}`}
-                  >
+                  <Link href={documentsUrl(client.id, "all", "", month)}>
                     Documentos
                   </Link>
                   <Link

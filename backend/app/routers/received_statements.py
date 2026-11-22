@@ -95,14 +95,21 @@ def live_record(service, owner, document):
 
 
 @router.post("/documents/{job_id}/confirm", dependencies=[Depends(require_pro_browser_request)])
-def confirm(job_id: str, request: Confirmation, owner: str = Depends(organization_owner), service=Depends(receipt_service)):
+def confirm(job_id: str, request: Confirmation, owner: str = Depends(organization_owner), service=Depends(receipt_service),
+            access=Depends(get_access_control_service)):
     record = service.repository.get(job_id)
     if (not record or record.job.identity.identity_type != "user" or record.job.identity.identity_id != owner):
         raise HTTPException(404, "Extrato não encontrado.")
     if record.expires_at <= datetime.now(timezone.utc):
         raise HTTPException(410, "O arquivo expirou.")
     with organization_errors():
-        return service.confirm(owner, job_id, **request.model_dump())
+        from app.security_baseline import read_bool_env
+        options = {'office_audit': True} if read_bool_env('PRO_OFFICE_ENABLED', default=False) else {}
+        result = service.confirm(owner, job_id, **request.model_dump(), **options)
+        if options:
+            from app.application.office_telemetry import office_event
+            office_event(access, owner, 'office_client_identified')
+        return result
 
 
 @router.patch("/clients/{client_id}", dependencies=[Depends(require_pro_browser_request)])

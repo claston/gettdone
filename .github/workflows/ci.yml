@@ -138,7 +138,7 @@ jobs:
           python scripts/run_pro_browser_suite.py --suite "${{ matrix.suite }}" --url http://127.0.0.1:3100
           if [ "${{ matrix.suite }}" = "workspace" ]; then
             cd backend
-            python -m pytest tests/test_canonical_pro_browser.py -q --basetemp "$RUNNER_TEMP/ofx70-browser" --junitxml=../tmp/ofx70-browser.xml
+            python -m pytest tests/test_canonical_pro_browser.py tests/test_office_browser.py -q --basetemp "$RUNNER_TEMP/ofx70-browser" --junitxml=../tmp/ofx70-browser.xml
           fi
 
       - name: Preserve synthetic browser evidence
@@ -153,6 +153,8 @@ jobs:
             tmp/pro-idle-navigation/
             tmp/pro-organization/
             tmp/pro-browser-suites/
+            tmp/ofx79-browser/
+            tmp/ofx70-browser.xml
             tmp/ofx61-browser/
             tmp/ofx70-browser.xml
           if-no-files-found: ignore
@@ -318,6 +320,7 @@ jobs:
           tests/test_conversion_pro_migration.py tests/test_canonical_movements.py tests/test_canonical_movements_postgres.py
           tests/test_canonical_pro.py tests/test_canonical_receipt_recovery.py tests/test_admin_overview.py tests/test_pro_workspace_refresh.py
           tests/test_document_type_correction_postgres.py
+          tests/test_office_postgres.py
           tests/test_pro_fiscal_service.py tests/test_pro_fiscal_http.py tests/test_classification_shadow_postgres.py
           tests/test_password_reset_migration.py tests/test_purchase_migration.py tests/test_marketing_campaign_migration.py -q
 

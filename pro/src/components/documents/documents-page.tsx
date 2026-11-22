@@ -1,6 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import {
+  OfficeDocumentControls,
+  OfficePackage,
+  useOfficeEnabled,
+} from "./office-controls";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
@@ -33,6 +38,8 @@ export function DocumentsPage({
   clientId = "",
   category = "all",
   batchId = "",
+  month = "",
+  accountId = "",
   service = documentsService,
   organization = organizationService,
   financialCenterVisible = false,
@@ -40,11 +47,15 @@ export function DocumentsPage({
   clientId?: string;
   category?: DocumentCategory;
   batchId?: string;
+  month?: string;
+  accountId?: string;
   service?: DocumentsService;
   organization?: OrganizationService;
   financialCenterVisible?: boolean;
 }) {
   const router = useRouter();
+  const office = useOfficeEnabled();
+  const [selected, setSelected] = useState<string[]>([]);
   const [catalog, setCatalog] = useState<OrganizationCatalog | null>(null);
   const [catalogError, setCatalogError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -61,6 +72,8 @@ export function DocumentsPage({
   const client = catalog?.clients.find((c) => c.id === clientId);
   const scoped = Boolean(clientId && clientId !== "unassigned");
   const query = new URLSearchParams({ category });
+  if (month) query.set("month", month);
+  if (accountId) query.set("account_id", accountId);
   if (batchId) query.set("batch_id", batchId);
   else if (clientId === "unassigned") query.set("unassigned", "true");
   else if (clientId) query.set("client_id", clientId);
@@ -69,7 +82,7 @@ export function DocumentsPage({
   const key = request;
   const current = snapshot?.key === key ? snapshot : null;
   const items = useAvailableImports(current?.data?.items, documentAvailability);
-  const returnTo = documentsUrl(clientId, category, batchId);
+  const returnTo = documentsUrl(clientId, category, batchId, month, accountId);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -238,7 +251,7 @@ export function DocumentsPage({
               value={clientId}
               disabled={upload}
               onChange={(e) =>
-                router.push(documentsUrl(e.target.value, category))
+                router.push(documentsUrl(e.target.value, category, "", month))
               }
             >
               <option value="">Todos os clientes</option>
@@ -252,13 +265,85 @@ export function DocumentsPage({
           </label>
         </div>
       )}
+      {office && (
+        <div className={styles.fields}>
+          {scoped && (
+            <label>
+              Conta{" "}
+              <select
+                value={accountId}
+                onChange={(e) =>
+                  router.push(
+                    documentsUrl(
+                      clientId,
+                      category,
+                      batchId,
+                      month,
+                      e.target.value,
+                    ),
+                  )
+                }
+              >
+                <option value="">Todas as contas</option>
+                {catalog?.accounts
+                  .filter((account) => account.client_id === clientId)
+                  .map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
+          <label>
+            Mês de trabalho{" "}
+            <input
+              type="month"
+              value={month === "unknown" ? "" : month}
+              onChange={(e) =>
+                router.push(
+                  documentsUrl(
+                    clientId,
+                    category,
+                    batchId,
+                    e.target.value,
+                    accountId,
+                  ),
+                )
+              }
+            />
+          </label>
+          <Link
+            href={documentsUrl(
+              clientId,
+              category,
+              batchId,
+              "unknown",
+              accountId,
+            )}
+          >
+            Período a confirmar
+          </Link>
+          <Link href={documentsUrl(clientId, category, batchId, "", accountId)}>
+            Todos os meses
+          </Link>
+        </div>
+      )}
+      {office && scoped && (
+        <OfficePackage
+          key={`${request}:${selected.join(",")}`}
+          clientId={clientId}
+          month={month}
+          jobs={selected}
+        />
+      )}
       {batchId && (
         <div className={styles.notice}>
           <p>
             Arquivos deste envio. Confira o titular e o cliente associado a cada
             documento. Importar não confirma conciliação.
           </p>
-          <Link href={documentsUrl(clientId, category)}>
+          <Link href={documentsUrl(clientId, category, "", month, accountId)}>
             Ver todos os documentos{client ? " do cliente" : ""}
           </Link>
         </div>
@@ -279,7 +364,13 @@ export function DocumentsPage({
         {Object.entries(documentCategories).map(([value, label]) => (
           <Link
             key={value}
-            href={documentsUrl(clientId, value as DocumentCategory, batchId)}
+            href={documentsUrl(
+              clientId,
+              value as DocumentCategory,
+              batchId,
+              month,
+              accountId,
+            )}
             aria-current={category === value ? "page" : undefined}
           >
             {label}
@@ -302,15 +393,35 @@ export function DocumentsPage({
         <>
           <div className={styles.list}>
             {items.map((item) => (
-              <DocumentRow
-                key={`${item.job_id}:${item.context.version}`}
-                item={item}
-                catalog={catalog}
-                organization={organization}
-                client={batchId ? client : undefined}
-                returnTo={returnTo}
-                onSaved={() => setAttempt((a) => a + 1)}
-              />
+              <div key={`${item.job_id}:${item.context.version}`}>
+                {office && scoped && (
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(item.job_id)}
+                      disabled={
+                        !selected.includes(item.job_id) && selected.length >= 30
+                      }
+                      onChange={(e) =>
+                        setSelected((ids) =>
+                          e.target.checked
+                            ? [...ids, item.job_id]
+                            : ids.filter((id) => id !== item.job_id),
+                        )
+                      }
+                    />
+                    Selecionar {item.filename} para o pacote
+                  </label>
+                )}
+                <DocumentRow
+                  item={item}
+                  catalog={catalog}
+                  organization={organization}
+                  client={batchId ? client : undefined}
+                  returnTo={returnTo}
+                  onSaved={() => setAttempt((a) => a + 1)}
+                />
+              </div>
             ))}
           </div>
           {!items.length && (
@@ -386,7 +497,9 @@ function DocumentRow({
         item={
           expired
             ? { ...item, is_expired: true, review_url: null, status: "expired" }
-            : item
+            : item.is_bank === false
+              ? { ...item, movement_start_date: null, movement_end_date: null }
+              : item
         }
         catalog={catalog ?? { clients: [], accounts: [], periods: [] }}
         service={organization}
@@ -445,6 +558,13 @@ function DocumentRow({
             </button>
           </div>
         )}
+      {!expired && (
+        <OfficeDocumentControls
+          key={`${item.source}:${item.verification?.version}`}
+          item={item}
+          onSaved={onSaved}
+        />
+      )}
       {error && <p role="alert">{error}</p>}
     </div>
   );

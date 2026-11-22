@@ -44,16 +44,18 @@ export function IdentityDocumentPreview({
   );
 }
 
-function AuthorizedIdentityPdf({
+export function AuthorizedIdentityPdf({
   batchId,
   jobId,
   initialPage,
   reload,
+  hint,
 }: {
   batchId: string;
   jobId: string;
   initialPage: number;
   reload(): void;
+  hint?: string;
 }) {
   const [state, setState] = useState<{ blob?: Blob; error?: string }>({});
   useEffect(() => {
@@ -87,6 +89,7 @@ function AuthorizedIdentityPdf({
       blob={state.blob}
       initialPage={initialPage}
       reload={reload}
+      hint={hint}
     />
   ) : (
     <p role="status">Carregando PDF…</p>

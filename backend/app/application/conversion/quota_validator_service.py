@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from app.application.office_billing import imported_without_conversion
+
 
 @dataclass(frozen=True, slots=True)
 class QuotaConsumptionResult:
@@ -11,7 +13,9 @@ class QuotaValidatorService:
     def __init__(self, *, access_control_service) -> None:
         self.access_control_service = access_control_service
 
-    def ensure_conversion_quota_available(self, *, identity) -> None:
+    def ensure_conversion_quota_available(self, *, identity, file_type=None, product='free') -> None:
+        if imported_without_conversion(identity, file_type, product):
+            return
         self.access_control_service.ensure_quota_available(identity, required_units=1)
 
     def consume_quota_for_conversion(
@@ -20,7 +24,10 @@ class QuotaValidatorService:
         identity,
         analysis,
         idempotency_key: str | None = None,
+        product: str = 'free',
     ) -> QuotaConsumptionResult:
+        if imported_without_conversion(identity, getattr(analysis, 'file_type', None), product):
+            return QuotaConsumptionResult(0, self.access_control_service.get_remaining_quota(identity))
         consumed_units = self.resolve_consumed_units(identity=identity, analysis=analysis)
         if idempotency_key:
             quota_remaining = self.access_control_service.consume_quota(

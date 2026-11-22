@@ -28,7 +28,7 @@ def _classification(document_type: str, confidence: float) -> DocumentTypeClassi
     )
 
 
-def test_fiscal_invoice_reaches_document_evidence_parser() -> None:
+def test_rejects_only_high_confidence_fiscal_invoice() -> None:
     classification = _classification(
         FISCAL_INVOICE,
         FISCAL_INVOICE_REJECTION_MIN_CONFIDENCE,
@@ -36,8 +36,15 @@ def test_fiscal_invoice_reaches_document_evidence_parser() -> None:
 
     decision = decide_document_routing(classification)
 
-    assert decision.action == DocumentRoutingAction.CONTINUE
-    assert enforce_document_routing(classification).action == DocumentRoutingAction.CONTINUE
+    assert decision.action == DocumentRoutingAction.REJECT
+    assert decision.reason == "high_confidence_fiscal_invoice"
+
+    with pytest.raises(UnsupportedDocumentContentError) as exc_info:
+        enforce_document_routing(classification)
+
+    assert exc_info.value.document_type == FISCAL_INVOICE
+    assert exc_info.value._document_type_classification == classification
+    assert "nota fiscal eletrônica" in str(exc_info.value).lower()
 
 
 def test_rejects_high_confidence_payment_report_with_clear_message() -> None:
