@@ -837,6 +837,29 @@ button.save-indicator {
   background: #fff4e5;
   font-size: 12px;
 }
+.document-type-control {
+  background: white;
+  border-bottom: 1px solid var(--line);
+  padding: 8px 16px;
+  max-height: 45vh;
+  overflow: auto;
+}
+.document-type-control form {
+  max-width: 650px;
+  padding: 12px 0;
+}
+.document-type-control select {
+  margin: 0 8px;
+  padding: 6px;
+  max-width: 100%;
+}
+.document-type-control p {
+  line-height: 1.5;
+}
+.document-type-control summary {
+  cursor: pointer;
+  margin-top: 6px;
+}
 .workspace-alerts > div {
   display: flex;
   align-items: center;

@@ -34,7 +34,10 @@ export interface Transaction {
   sourceRegions?: readonly SourceRegion[];
   reviewRegions?: readonly SourceRegion[];
   isDeleted?: boolean;
-  fieldStates: Record<Exclude<TransactionField, "documentNumber">, TransactionFieldState> &
+  fieldStates: Record<
+    Exclude<TransactionField, "documentNumber">,
+    TransactionFieldState
+  > &
     Partial<Record<"documentNumber", TransactionFieldState>>;
 }
 
@@ -77,6 +80,12 @@ export interface Conversion {
   noActivity?: boolean;
   partialStatement?: boolean;
   financialDocument?: FinancialDocument | null;
+  documentType?: string;
+  documentTypeHistory?: Array<{
+    before: string;
+    after: string;
+    changed_at: string;
+  }>;
   transactions: Transaction[];
 }
 
@@ -149,6 +158,10 @@ export interface ExportResult {
 }
 
 export interface WorkspaceRepository {
+  changeDocumentType?(
+    conversionId: string,
+    documentType: string,
+  ): Promise<void>;
   lockSnapshot?(conversionId: string): void;
   prepareConflict?(
     conversionId: string,
@@ -269,7 +282,9 @@ export function validateTransactionField(
   value: string,
 ): string | null {
   if (field === "documentNumber") {
-    return value.length <= 1024 ? null : "O documento deve ter até 1024 caracteres.";
+    return value.length <= 1024
+      ? null
+      : "O documento deve ter até 1024 caracteres.";
   }
   if (field === "date") {
     return isValidDate(value)

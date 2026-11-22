@@ -5,7 +5,7 @@ from app.application import pdf_parser
 from app.application.bank_identity import resolve_bank_name
 from app.application.document_extraction_models import ExtractedLine, ExtractedPage, RawDocumentExtraction
 from app.application.document_type_classifier import classify_document_type
-from app.application.errors import PdfFinancialValidationError, UnsupportedDocumentContentError
+from app.application.errors import PdfFinancialValidationError
 
 
 def ocr_line(text, x, y, number):
@@ -90,11 +90,14 @@ def parse(pages):
     return pdf_parser._parse_pdf_transactions_from_page_texts(pages)
 
 
-def test_payment_receipt_has_specific_product_rejection():
+def test_payment_receipt_preserves_value_without_bank_movements():
     text = "BANCO DO BRASIL\nCOMPROVANTE DE PAGAMENTO DE TITULOS\nVALOR COBRADO 101,20\nDATA DO PAGAMENTO 02/09/2026"
     assert classify_document_type("input.pdf", b"", extracted_text=text).document_type == "bank_receipt"
-    with pytest.raises(UnsupportedDocumentContentError, match="comprovante de pagamento"):
-        parse([text])
+    result = parse([text])
+    assert result.transactions == []
+    assert result.financial_document['document_type'] == 'bank_receipt'
+    amount = next(item for item in result.financial_document['observations'] if item['amounts'])
+    assert amount['amounts'] == {'value': '101.20'}
 
 
 def test_bb_footer_beats_counterparty_bank():

@@ -132,7 +132,9 @@ class FinancialCenterService:
                 JOIN {repo.p}conversion_batches b ON b.batch_id=j.batch_id
                 WHERE x.organization_id=%s AND x.client_id=%s AND b.identity_id=%s AND b.identity_type='user'
                     AND j.status='completed' AND LEAST(j.expires_at,b.expires_at)>clock_timestamp()
-                    AND COALESCE(j.result_payload->>'authority','')<>'postgres_v1' ''', (org, client_id, actor_id)).fetchone()
+                    AND COALESCE(j.result_payload->>'authority','')<>'postgres_v1'
+                    AND COALESCE(j.result_payload->'analysis'->'financial_document'->>'document_type','')
+                        NOT IN ('bank_receipt','fiscal_invoice') ''', (org, client_id, actor_id)).fetchone()
             # Expiration can elapse during the SQL work, even in a stable snapshot.
             if visibility["expires_at"] and conn.execute("SELECT clock_timestamp() AS now").fetchone()["now"] >= visibility["expires_at"]:
                 raise AnalysisEditConflictError

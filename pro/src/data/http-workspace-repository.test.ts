@@ -10,6 +10,66 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+it("corrige o tipo com versão, contexto do lote e confirmação explícita da API", async () => {
+  let kind = "bank_statement";
+  const history = [
+    {
+      before: "bank_statement",
+      after: "bank_receipt",
+      changed_at: "2026-11-22T10:01:00Z",
+    },
+  ];
+  const fetcher = vi.fn<typeof fetch>(async (input, options) => {
+    const url = String(input);
+    if (url.includes("/convert-edits/")) {
+      const command = JSON.parse(String(options?.body));
+      expect(command).toMatchObject({
+        document_type: "bank_receipt",
+        expected_updated_at: "v1",
+        job_id: "job_type",
+        batch_id: "batch_type",
+      });
+      expect(command.operation_id).toBeTruthy();
+      kind = command.document_type;
+      return jsonResponse({
+        document_type: kind,
+        document_type_history: history,
+      });
+    }
+    if (url.includes("/conversion-batches/batch_type"))
+      return jsonResponse({
+        batch_id: "batch_type",
+        status: "completed",
+        jobs: [
+          {
+            job_id: "job_type",
+            filename: "documento.pdf",
+            status: "completed",
+            analysis_id: "an_type",
+            result: {
+              analysis: {
+                file_type: "pdf",
+                document_type: kind,
+                document_type_history: kind === "bank_receipt" ? history : [],
+                updated_at: "v1",
+                preview_transactions: [],
+              },
+            },
+          },
+        ],
+      });
+    return jsonResponse({});
+  });
+  const repository = createHttpWorkspaceRepository({ apiUrl: "/", fetcher });
+  expect(
+    (await repository.getBatch("batch_type")).conversions[0].documentType,
+  ).toBe("bank_statement");
+  await repository.changeDocumentType!("job_type", "bank_receipt");
+  const conversion = (await repository.getBatch("batch_type")).conversions[0];
+  expect(conversion.documentType).toBe("bank_receipt");
+  expect(conversion.documentTypeHistory).toEqual(history);
+});
+
 describe("documentos e lotes já abertos", () => {
   it.each(["fiscal_invoice", "UnsupportedDocumentContentError"])(
     "permite conferir o PDF da nota antes de importar: %s",

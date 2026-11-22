@@ -213,8 +213,9 @@ SICOOB_EXAMPLE_CASES: dict[str, dict[str, Any]] = {
         """,
     },
     "comprovante_boleto": {
-        "profile": "sicoob_comprovante_pagamento_boleto_v1",
-        "amounts": [-3365.66],
+        "profile": "bank_receipt_events_v1",
+        "amounts": [],
+        "evidence_amount": '3365.66',
         "text": """
         SICOOB - Sistema de Cooperativas de Crédito do Brasil
         Plataforma de Serviços Financeiros do Sicoob - SISBR
@@ -258,6 +259,11 @@ def test_parse_pdf_page_texts_supports_sicoob_visual_examples(case_name: str) ->
 
     assert result.layout.layout_name == case["profile"]
     assert [transaction.amount for transaction in result.transactions] == case["amounts"]
+    if 'evidence_amount' in case:
+        amount = next(item for item in result.financial_document['observations'] if item['amounts'])
+        assert amount['amounts'] == {'value': case['evidence_amount']}
+        assert 'ofx' not in result.financial_document['export']['available_formats']
+        return
     if "balances" in case:
         assert [transaction.running_balance for transaction in result.canonical_transactions] == case["balances"]
     ofx = build_ofx_statement(

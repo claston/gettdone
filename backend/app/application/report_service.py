@@ -77,6 +77,8 @@ class ReportService:
         account_number: str | None = None,
         bank_code: str | None = None,
         operation_id: str | None = None,
+        document_type: str | None = None,
+        actor_id: str | None = None,
     ) -> dict[str, object]:
         return self.storage.apply_convert_edits(
             analysis_id=analysis_id,
@@ -88,6 +90,7 @@ class ReportService:
             account_number=account_number,
             bank_code=bank_code,
             operation_id=operation_id,
+            **({'document_type': document_type, 'actor_id': actor_id} if document_type is not None else {}),
         )
 
     def save_reconcile_report(

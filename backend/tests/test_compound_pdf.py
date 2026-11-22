@@ -132,10 +132,11 @@ def test_textract_text_entrypoint_segments_before_monthly_geometry_and_keeps_ann
     assert result.parse_metrics["opening_balance_ambiguous"] == 1
 
 
-def test_textract_text_standalone_invoice_still_rejected():
+def test_textract_text_standalone_invoice_uses_evidence_without_movements():
     extraction = RawDocumentExtraction("aws_textract", "synthetic", [ExtractedPage(1, [_line("invoice", INVOICE, .1, .1)])], {})
-    with pytest.raises(UnsupportedDocumentContentError):
-        _parse_scanned_pdf_with_textract_text_pages(extraction)
+    result = _parse_scanned_pdf_with_textract_text_pages(extraction)
+    assert result.financial_document['document_type'] == 'fiscal_invoice'
+    assert result.transactions == []
 
 
 def test_monthly_ocr_reports_unresolved_row_instead_of_inventing_a_value():
@@ -244,10 +245,11 @@ def test_native_pdf_with_invoice_first_uses_only_statement_and_original_source_p
     assert "PRESTADOR" not in result.parsed_document.extracted_text
 
 
-def test_standalone_nfse_is_rejected_without_transaction_or_ocr(monkeypatch):
+def test_standalone_nfse_is_imported_without_transaction_or_ocr(monkeypatch):
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")
-    with pytest.raises(UnsupportedDocumentContentError):
-        build_default_conversion_pipeline().run(filename="invoice.pdf", raw_bytes=native_pdf([INVOICE]), analysis_id="an_invoice")
+    result = build_default_conversion_pipeline().run(filename="invoice.pdf", raw_bytes=native_pdf([INVOICE]), analysis_id="an_invoice")
+    assert result.analysis_data.financial_document['document_type'] == 'fiscal_invoice'
+    assert result.analysis_data.preview_transactions == []
 
 
 @pytest.mark.parametrize("receipt_first", [False, True])

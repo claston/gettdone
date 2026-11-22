@@ -81,6 +81,8 @@ function publicFailureMessage(job: ApiJob): string | undefined {
 }
 
 interface ApiAnalysis {
+  document_type?: string;
+  document_type_history?: Conversion["documentTypeHistory"];
   review_guidance?: Conversion["reviewGuidance"];
   authority?: string;
   version?: number;
@@ -219,7 +221,11 @@ export function createHttpWorkspaceRepository(
       documents.delete(documents.keys().next().value!);
   };
 
-  const request = async (path: string, init: RequestInit = {}, allowNotModified = false) => {
+  const request = async (
+    path: string,
+    init: RequestInit = {},
+    allowNotModified = false,
+  ) => {
     const response = await apiClient.request(path, {
       ...init,
       headers: {
@@ -281,14 +287,21 @@ export function createHttpWorkspaceRepository(
       context.persistedTransactions.map((row) => [row.id, row]),
     );
     const documentRows = transactions.filter(
-      (row) => (row.documentNumber ?? null) !==
+      (row) =>
+        (row.documentNumber ?? null) !==
         (originalById.get(row.id)?.documentNumber ?? null),
     );
-    if (documentRows.some((row) => {
-      const server = result.preview_transactions?.[serverOrder.indexOf(row.id)];
-      return !server || !Object.hasOwn(server, "document_number") ||
-        (server.document_number ?? null) !== (row.documentNumber ?? null);
-    }))
+    if (
+      documentRows.some((row) => {
+        const server =
+          result.preview_transactions?.[serverOrder.indexOf(row.id)];
+        return (
+          !server ||
+          !Object.hasOwn(server, "document_number") ||
+          (server.document_number ?? null) !== (row.documentNumber ?? null)
+        );
+      })
+    )
       throw new Error(
         "Não foi possível confirmar o documento. Sua edição continua pendente; tente salvar novamente.",
       );
@@ -331,7 +344,10 @@ export function createHttpWorkspaceRepository(
       context.rowCount = rows.length;
       context.savedTransactions = transactions.map((transaction) => ({
         ...transaction,
-        documentNumber: rows[serverOrder.indexOf(transaction.id)].document_number ?? transaction.documentNumber ?? null,
+        documentNumber:
+          rows[serverOrder.indexOf(transaction.id)].document_number ??
+          transaction.documentNumber ??
+          null,
         statementAccount:
           mapStatementAccount(rows[serverOrder.indexOf(transaction.id)]) ??
           transaction.statementAccount,
@@ -392,11 +408,15 @@ export function createHttpWorkspaceRepository(
       : `/api/pro/conversion-batches/${encodeURIComponent(batchId)}`;
     const cachedBatch = batches.get(batchId);
     const validator = cachedBatch ? validators.get(batchId) : undefined;
-    const response = await request(readPath, {
-      signal,
-      cache: "no-store",
-      headers: validator ? { "If-None-Match": validator } : {},
-    }, Boolean(validator));
+    const response = await request(
+      readPath,
+      {
+        signal,
+        cache: "no-store",
+        headers: validator ? { "If-None-Match": validator } : {},
+      },
+      Boolean(validator),
+    );
     if (signal?.aborted || version !== proSessionCacheVersion())
       throw new DOMException("Session changed", "AbortError");
     if (response.status === 304) return batches.get(batchId) ?? cachedBatch!;
@@ -455,9 +475,10 @@ export function createHttpWorkspaceRepository(
     const etag = response.headers.get("ETag");
     // A protected draft can retain an older editing version. Do not validate
     // that snapshot as current: reverting the draft must still adopt remote rows.
-    const adopted = payload.jobs.every((job) =>
-      !job.result?.analysis?.version ||
-      contexts.get(job.job_id)?.version === job.result.analysis.version,
+    const adopted = payload.jobs.every(
+      (job) =>
+        !job.result?.analysis?.version ||
+        contexts.get(job.job_id)?.version === job.result.analysis.version,
     );
     if (etag && adopted) validators.set(batchId, etag);
     else validators.delete(batchId);
@@ -566,7 +587,13 @@ export function createHttpWorkspaceRepository(
       const originalById = new Map(
         context.persistedTransactions.map((row) => [row.id, row]),
       );
-      const fields = ["date", "description", "documentNumber", "credit", "debit"] as const;
+      const fields = [
+        "date",
+        "description",
+        "documentNumber",
+        "credit",
+        "debit",
+      ] as const;
       const edits: Array<Record<string, unknown>> = transactions
         .filter((row) => {
           if (!context.rowIds.has(row.id)) return false;
@@ -702,6 +729,40 @@ export function createHttpWorkspaceRepository(
       };
       await finishSave(context);
       return context.savedTransactions!;
+    },
+
+    async changeDocumentType(conversionId: string, documentType: string) {
+      const context = requireContext(contexts, conversionId);
+      if (context.dirty || context.pendingSave)
+        throw new Error(
+          "Salve as edições antes de alterar o tipo do documento.",
+        );
+      const response = await request(
+        `/api/pro/convert-edits/${encodeURIComponent(context.analysisId!)}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            edits: [],
+            document_type: documentType,
+            operation_id: crypto.randomUUID(),
+            expected_updated_at: context.updatedAt,
+            expected_version: context.version,
+            batch_id: context.batchId,
+            job_id: conversionId,
+          }),
+        },
+      );
+      const saved = await response.json();
+      if (
+        saved.document_type !== documentType ||
+        !saved.document_type_history?.length
+      )
+        throw new Error(
+          "Não foi possível confirmar a alteração. Atualize o documento antes de tentar novamente.",
+        );
+      contexts.delete(conversionId);
+      batches.delete(context.batchId);
+      validators.clear();
     },
 
     async markReviewed(conversionId: string) {
@@ -894,7 +955,12 @@ function mapConversion({
     expiresAt: job.expires_at,
     batchId,
     fileName: job.filename,
-    bankName: analysis?.bank_name?.trim() || "Instituição não identificada",
+    bankName:
+      analysis?.document_type === "bank_receipt"
+        ? "Comprovante"
+        : analysis?.document_type === "fiscal_invoice"
+          ? "Nota fiscal"
+          : analysis?.bank_name?.trim() || "Instituição não identificada",
     bankCode: analysis?.bank_code?.trim() || undefined,
     period: resolveTransactionPeriod(transactions),
     status,
@@ -906,8 +972,10 @@ function mapConversion({
     suspectedCount,
     editedCount: countEdited(transactions),
     pdf:
-      fileType !== "pdf" || job.status === "expired" ||
-      (job.status === "failed" && !isFiscalInvoiceFailure(job.error_code, job.error_message))
+      fileType !== "pdf" ||
+      job.status === "expired" ||
+      (job.status === "failed" &&
+        !isFiscalInvoiceFailure(job.error_code, job.error_message))
         ? null
         : {
             url: `${apiUrl}/api/pro/conversion-batches/${encodeURIComponent(batchId)}/jobs/${encodeURIComponent(job.job_id)}/document`,
@@ -918,6 +986,8 @@ function mapConversion({
       ? `${apiUrl}/convert-report/${encodeURIComponent(analysisId)}?format=${analysis?.financial_document ? "xlsx" : "ofx"}${context?.version ? `&expected_version=${context.version}` : ""}`
       : undefined,
     financialDocument: analysis?.financial_document,
+    documentType: analysis?.document_type,
+    documentTypeHistory: analysis?.document_type_history,
     noActivity: analysis?.pdf_processing_metrics?.statement_no_activity === 1,
     partialStatement,
     reviewWarnings,

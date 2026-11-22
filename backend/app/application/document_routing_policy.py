@@ -52,13 +52,6 @@ def decide_document_routing(
         return DocumentRoutingDecision(DocumentRoutingAction.REJECT, "unsupported_cnab_collection_return")
     if classification.document_type == NOTARY_RECEIPT and classification.confidence >= 0.90:
         return DocumentRoutingDecision(DocumentRoutingAction.REJECT, "high_confidence_notary_receipt")
-    if classification.document_type == BANK_RECEIPT and "receipt_payment_title" in classification.evidence:
-        return DocumentRoutingDecision(DocumentRoutingAction.REJECT, "unsupported_payment_receipt")
-    if classification.document_type == FISCAL_INVOICE and classification.confidence >= FISCAL_INVOICE_REJECTION_MIN_CONFIDENCE:
-        return DocumentRoutingDecision(
-            action=DocumentRoutingAction.REJECT,
-            reason="high_confidence_fiscal_invoice",
-        )
     if classification.document_type == PAYMENT_REPORT and classification.confidence >= PAYMENT_REPORT_REJECTION_MIN_CONFIDENCE:
         return DocumentRoutingDecision(
             action=DocumentRoutingAction.REJECT,

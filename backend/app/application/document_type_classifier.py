@@ -35,7 +35,7 @@ FINANCIAL_SPREADSHEET = "financial_spreadsheet"
 OTHER_DOCUMENT = "other"
 UNKNOWN_DOCUMENT = "unknown"
 
-DOCUMENT_TYPE_CLASSIFIER_VERSION = "2026-10-27.1"
+DOCUMENT_TYPE_CLASSIFIER_VERSION = "2026-11-22.1"
 
 _PDF_PREVIEW_PAGE_LIMIT = 3
 _PDF_PREVIEW_CHAR_LIMIT = 16_000
@@ -295,7 +295,7 @@ def _bank_statement_evidence(
     layout_inference_confidence: float | None,
 ) -> list[str]:
     evidence: list[str] = []
-    normalized_layout = normalize_upper_text(layout_inference_name or "")
+    normalized_layout = normalize_upper_text((layout_inference_name or "").replace("_", " "))
     if normalized_layout and normalized_layout != "GENERIC STATEMENT PTBR" and (
         "STATEMENT" in normalized_layout or "EXTRATO" in normalized_layout
     ):
@@ -304,8 +304,12 @@ def _bank_statement_evidence(
             evidence.append("statement_layout_high_confidence")
     if "EXTRATO" in normalized_text:
         evidence.append("statement_title")
-    if "CONTA CORRENTE" in normalized_text or "CONTA DIGITAL" in normalized_text:
+    if ("CONTA CORRENTE" in normalized_text or "CONTA DIGITAL" in normalized_text
+            or (re.search(r"\bAGENCIA\s*:?\s*\d+", normalized_text)
+                and re.search(r"\bCONTA\s*:?\s*\d+", normalized_text))):
         evidence.append("statement_account")
+    if re.search(r"\bPERIODO\s*:?\s*\d{2}/\d{2}/\d{4}\s+(?:A|ATE)\s+\d{2}/\d{2}/\d{4}\b", normalized_text):
+        evidence.append("statement_period")
     if "SALDO" in normalized_text:
         evidence.append("statement_balance")
     if "DATA" in normalized_text and "VALOR" in normalized_text and any(

@@ -67,7 +67,16 @@ class ReviewCommandService(LegacyAnalysisState):
         account_number: str | None = None,
         bank_code: str | None = None,
         operation_id: str | None = None,
+        document_type: str | None = None,
+        actor_id: str | None = None,
     ) -> ReviewCommandResult:
+        if document_type is not None:
+            from app.application.document_type_correction import correct_document_type
+
+            if edits or any(value is not None for value in (opening_balance, closing_balance, bank_branch, account_number, bank_code)):
+                raise ValueError('Salve as edições antes de alterar o tipo do documento.')
+            return correct_document_type(self, content, document_type=document_type, actor_id=actor_id,
+                operation_id=operation_id, expected_updated_at=expected_updated_at)
         if content.get("financial_document") is not None:
             raise InvalidFileContentError(
                 "A edição de relatórios especializados ainda não está disponível. "

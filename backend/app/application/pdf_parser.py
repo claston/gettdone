@@ -466,6 +466,12 @@ def _parse_pdf_transactions_strict(
         return _with_parse_observability(parse_cdb_position_result(read_native_table_source(raw_bytes), native=True),
             extraction_provider="native_pdfium_text", native_text_detected=1, textract_attempted=0)
     if native_pages:
+        from app.application.document_evidence import parse_evidence_result
+
+        evidence_result = parse_evidence_result(native_pages, native=True)
+        if evidence_result is not None:
+            return _with_parse_observability(evidence_result, native_text_detected=1,
+                                            textract_attempted=0, extraction_provider='native_pdf_text')
         report = detect_financial_report("\n".join(native_pages))
         if report and report[1] in {'portfolio_positions_and_performance','analytic_collection_postings'}:
             return _with_parse_observability(
@@ -1485,9 +1491,14 @@ def _parse_pdf_transactions_from_page_texts_strict(
     preserve_layout_spacing: bool = False,
     context: LayoutSpecificParseContext | None = None,
 ) -> PdfParseResult:
+    from app.application.document_evidence import parse_evidence_result
     from app.application.parsers.pdf.statement_blocks import combine_statement_results, slice_extraction, statement_blocks
     from app.application.parsers.pdf.statement_completeness import validate_statement_completeness
     from app.application.unsupported_document_detection import NOTARY_RECEIPT_DOCUMENT_TYPE, NOTARY_RECEIPT_USER_MESSAGE
+
+    evidence_result = parse_evidence_result(page_texts, native=bool(context and context.is_native_text))
+    if evidence_result is not None:
+        return evidence_result
 
     report = detect_financial_report("\n".join(page_texts))
     if report and report[1] in {'portfolio_positions_and_performance','analytic_collection_postings'}:
