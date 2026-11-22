@@ -63,6 +63,9 @@ describe("Documentos", () => {
         category="statements"
       />,
     );
+    expect(
+      screen.getByRole("button", { name: "Importar documentos" }),
+    ).toBeDisabled();
     await screen.findByRole("link", { name: "Abrir revisão" });
     fireEvent.click(
       screen.getByRole("button", { name: "Importar documentos" }),
@@ -70,6 +73,7 @@ describe("Documentos", () => {
     const panel = screen.getByRole("region", {
       name: "Importação de documentos",
     });
+    expect(screen.getByLabelText("Cliente")).toBeDisabled();
     expect(within(panel).getAllByRole("heading")).toHaveLength(1);
     expect(
       within(panel).getByRole("heading", { name: "Importar documentos" }),
@@ -78,7 +82,7 @@ describe("Documentos", () => {
       within(panel).getByText(/Cliente selecionado: Cliente A/),
     ).toBeVisible();
     expect(
-      within(panel).getByText(/confira o titular e confirme a associação/),
+      within(panel).getByText(/Os arquivos serão associados a este cliente/),
     ).toBeVisible();
     expect(
       within(panel).queryByRole("link", { name: /nota fiscal/i }),
@@ -99,6 +103,7 @@ describe("Documentos", () => {
     expect(
       screen.getByRole("button", { name: "Importar documentos" }),
     ).toBeVisible();
+    expect(screen.getByLabelText("Cliente")).toBeEnabled();
   });
   it("filtra no servidor e retorna da revisão ao cliente e tipo selecionados", async () => {
     const props = services();

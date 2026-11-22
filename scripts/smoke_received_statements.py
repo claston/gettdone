@@ -56,7 +56,7 @@ def run(base):
                           "coverage": "unknown", "consolidation": "observed", "basis": ""}}
     writes, errors, unexpected, held_catalogs, held_documents, held_refreshes = [], [], [], [], [], []
     loading = {"catalog": True, "documents": True, "refresh": True}
-    imported = document("imported", "novo-extrato.ofx", "statements", None)
+    imported = document("imported", "nota-fiscal.pdf", "invoices", None)
 
     def document_page(query):
         selected = documents
@@ -112,6 +112,13 @@ def run(base):
             }
             imported["context"].update(client_id=clients[0]["id"], version=1)
             route.fulfill(json={"id": clients[0]["id"]})
+        elif path == "/api/pro/organization/contexts/bulk":
+            assert route.request.post_data_json == {"items": [{
+                "batch_id": imported["batch_id"], "job_id": imported["job_id"],
+                "context": {"client_id": clients[0]["id"], "account_id": None, "period_ids": [], "expected_version": 0},
+            }]}
+            imported["context"].update(client_id=clients[0]["id"], version=1)
+            route.fulfill(json={"items": [{"job_id": imported["job_id"], "status": 200, "context": imported["context"]}]})
         elif path == "/api/conversion-runtime":
             route.fulfill(json={"direct_batch_enabled": True, "upload_mode": "direct_s3",
                                 "execution_mode": "sqs_lambda", "batch_max_files": 12})
@@ -124,7 +131,8 @@ def run(base):
             route.fulfill(json={"batch_id": imported["batch_id"], "uploads": [
                 {"job_id": imported["job_id"], "url": base + "/synthetic-upload", "fields": {}}]})
         elif path == "/synthetic-upload":
-            assert method == "POST" and b"novo-extrato.ofx" in route.request.post_data_buffer
+            assert method == "POST" and b"nota-fiscal.pdf" in route.request.post_data_buffer
+            assert imported["context"]["client_id"] == clients[0]["id"], "Client must be persisted before upload"
             route.fulfill(status=204)
         elif path == "/api/pro/conversion-batches/batch_imported/submit":
             assert route.request.post_data_json == {}
@@ -229,19 +237,18 @@ def run(base):
             expect(expired.get_by_role("link", name="Abrir revisão")).to_have_count(0)
             page.screenshot(path=str(output / "expired-document.png"), full_page=True)
 
-            # Import through the client context. Association must remain an explicit action.
+            # Import any document through the client context, including a fiscal PDF.
             page.get_by_role("combobox", name="Cliente", exact=True).select_option("client_browser")
             expect(page.get_by_role("heading", name="Padaria corrigida", exact=True)).to_be_visible()
             page.get_by_role("button", name="Importar documentos", exact=True).click()
             upload = page.get_by_role("region", name="Importação de documentos")
             upload.get_by_label("Selecionar arquivos").set_input_files({
-                "name": imported["filename"], "mimeType": "application/x-ofx", "buffer": b"OFXHEADER:100\n"})
+                "name": imported["filename"], "mimeType": "application/pdf", "buffer": b"%PDF-synthetic\n"})
             upload.get_by_role("button", name="Importar documentos", exact=True).click()
-            expect(page.get_by_role("button", name="Confirmar associação ao cliente", exact=True)).to_be_visible()
+            expect(page.get_by_role("article", name=imported["filename"])).to_be_visible()
             assert parse_qs(urlsplit(page.url).query) == {"client": ["client_browser"], "batch": ["batch_imported"]}
-            assert imported["context"]["client_id"] is None
+            assert imported["context"]["client_id"] == clients[0]["id"]
             assert not any(path.endswith("/confirm") for path in writes)
-            page.get_by_role("button", name="Confirmar associação ao cliente", exact=True).click()
             expect(page.get_by_role("button", name="Confirmar associação ao cliente", exact=True)).to_have_count(0)
             expect(page.get_by_role("article", name=imported["filename"])).to_contain_text("Padaria corrigida")
             assert imported["context"]["version"] == 1
@@ -292,7 +299,7 @@ def run(base):
                        "checks": ["client and document loading", "client roster without documents", "accent and tax ID search",
                                   "client creation and optimistic edit", "explicit refresh across filters", "document categories",
                                   "unassigned documents", "expired document review blocked", "review return preserves filters",
-                                  "client import and explicit association", "multi-batch editor compatibility", "original batch review",
+                                  "client-context fiscal PDF import and persisted association", "multi-batch editor compatibility", "original batch review",
                                   "scoped export", "desktop/mobile", "independent converter", "legacy screens hidden"]}
             (output / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
             print("PRO clients/documents browser PASS: roster, filters, import, confirmation, review, export and mobile.")

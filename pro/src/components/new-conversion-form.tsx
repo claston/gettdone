@@ -114,7 +114,14 @@ export function NewConversionForm({
         }
         batchId = (await activeService.submitPro(proEstimate.batchId)).batchId;
       }
-      batchId ??= (await activeService.createAndSubmit(files)).batchId;
+      if (!batchId) {
+        const result = importContext?.clientId
+          ? await activeService.createAndSubmit(files, {
+              clientId: importContext.clientId,
+            })
+          : await activeService.createAndSubmit(files);
+        batchId = result.batchId;
+      }
       if (importContext) {
         setCreatedBatch(batchId);
         const query = new URLSearchParams({ batch: batchId });
@@ -369,8 +376,9 @@ export function NewConversionForm({
 
         {importing && (
           <p className={styles.guidance}>
-            Após a leitura, confira o titular e confirme a associação dos
-            documentos ao cliente.
+            {importContext?.clientId
+              ? "Os arquivos serão associados a este cliente. Após a leitura, confira o titular e os dados dos documentos."
+              : "Após a leitura, confira o titular e confirme a associação dos documentos ao cliente."}
           </p>
         )}
 

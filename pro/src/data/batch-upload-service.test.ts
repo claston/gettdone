@@ -67,6 +67,94 @@ it("envia um PDF PRO e confere páginas antes de submeter ao worker", async () =
 });
 
 describe("BatchUploadService", () => {
+  it.each(["success", "partial", "http", "network", "wrong-client", "missing"])(
+    "associa todos os documentos antes do envio e interrompe se o vínculo falhar: %s",
+    async (outcome) => {
+      const events: string[] = [];
+      const filenames = ["nota-fiscal.pdf", "extrato.ofx", "comprovante.pdf"];
+      const uploads = filenames.map((filename, index) => ({
+        job_id: `job_${index}`,
+        filename,
+        url: `https://uploads.example.test/${index}`,
+        fields: {},
+      }));
+      const request = vi.fn(async (url: string, init?: RequestInit) => {
+        events.push(url);
+        if (url.endsWith("conversion-runtime"))
+          return jsonResponse({
+            direct_batch_enabled: true,
+            upload_mode: "direct_s3",
+            execution_mode: "sqs_lambda",
+            batch_max_files: 12,
+          });
+        if (url.endsWith("/contexts/bulk")) {
+          expect(JSON.parse(String(init?.body))).toEqual({
+            items: uploads.map((upload) => ({
+              batch_id: "batch-client",
+              job_id: upload.job_id,
+              context: {
+                client_id: "client_chosen",
+                account_id: null,
+                period_ids: [],
+                expected_version: 0,
+              },
+            })),
+          });
+          if (outcome === "network") throw new TypeError("Failed to fetch");
+          if (outcome === "http")
+            return jsonResponse({ detail: "Cliente indisponível" }, 403);
+          return jsonResponse({
+            items: uploads
+              .slice(0, outcome === "missing" ? 2 : 3)
+              .map((upload, index) => ({
+                job_id: upload.job_id,
+                status: outcome === "partial" && index === 2 ? 409 : 200,
+                context: {
+                  client_id:
+                    outcome === "wrong-client" ? "other" : "client_chosen",
+                  version: 1,
+                },
+              })),
+          });
+        }
+        if (url.endsWith("/submit"))
+          return jsonResponse({ batch_id: "batch-client" });
+        return jsonResponse({ batch_id: "batch-client", uploads });
+      });
+      const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => {
+        events.push("upload-bytes");
+        return new Response(null, { status: 204 });
+      });
+      const service = createBatchUploadService({
+        apiUrl: "/",
+        apiClient: { request },
+        fetcher,
+        digestFile: async () => "a".repeat(64),
+        createIdempotencyKey: () => "client-request",
+      });
+      const result = service.createAndSubmit(
+        filenames.map((name) => new File(["data"], name)),
+        { clientId: "client_chosen" },
+      );
+      if (outcome === "success") {
+        await expect(result).resolves.toEqual({ batchId: "batch-client" });
+        expect(fetcher).toHaveBeenCalledTimes(3);
+        expect(events).toContain("/api/pro/organization/contexts/bulk");
+        expect(
+          events.indexOf("/api/pro/organization/contexts/bulk"),
+        ).toBeLessThan(events.indexOf("upload-bytes"));
+        expect(events.at(-1)).toBe(
+          "/api/pro/conversion-batches/batch-client/submit",
+        );
+      } else {
+        await expect(result).rejects.toThrow(
+          "Não foi possível associar todos os arquivos ao cliente",
+        );
+        expect(fetcher).not.toHaveBeenCalled();
+        expect(events.some((url) => url.endsWith("/submit"))).toBe(false);
+      }
+    },
+  );
   it.each([12, 1])(
     "renova a sessão após inatividade e respeita o limite autenticado de %i arquivos",
     async (authenticatedLimit) => {
