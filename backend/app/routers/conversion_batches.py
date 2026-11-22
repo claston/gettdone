@@ -408,7 +408,7 @@ def list_conversion_batches(
         except (ValueError, TypeError, binascii.Error):
             raise HTTPException(status_code=400, detail="Invalid pagination cursor.") from None
     summaries = active.repository.list_for_owner(identity_type=identity.identity_type, identity_id=identity.identity_id,
-                                                 limit=limit + 1, before=before)
+                                                 limit=limit + 1, before=before, active_only=True)
     now = datetime.now(timezone.utc)
     items = []
     for summary in summaries[:limit]:

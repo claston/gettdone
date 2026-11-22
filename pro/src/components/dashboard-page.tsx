@@ -4,6 +4,10 @@ import { ArrowRight, FileStack, LoaderCircle, Plus } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
+  batchAvailability,
+  useAvailableImports,
+} from "./use-available-imports";
+import {
   batchHistoryService,
   type BatchHistoryPage,
   type BatchHistoryService,
@@ -48,6 +52,7 @@ export function DashboardPage({
   } | null>(null);
   const current = result?.request === request ? result : null;
   const page = current?.page ?? activeService.getCachedPage?.(cursor) ?? null;
+  const items = useAvailableImports(page?.items, batchAvailability);
   const loading = !current && !page;
   const error = current?.error ?? null;
 
@@ -114,7 +119,7 @@ export function DashboardPage({
               Tentar novamente
             </button>
           </div>
-        ) : page?.items.length ? (
+        ) : items.length ? (
           <>
             <div className="history-table-scroll">
               <table
@@ -133,82 +138,56 @@ export function DashboardPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {(embedded ? page.items : page.items.slice(0, 5)).map(
-                    (item) => (
-                      <tr key={item.id}>
-                        <td>
-                          {dateLabel(item.createdAt)}
-                          <small>
-                            {item.isExpired
-                              ? "Arquivos expirados"
-                              : `Disponível até ${dateLabel(item.expiresAt)}`}
-                          </small>
-                        </td>
-                        <td>{item.fileCount}</td>
-                        <td>
-                          <span
-                            className={`history-status ${item.isExpired ? "expired" : ""}`}
+                  {(embedded ? items : items.slice(0, 5)).map((item) => (
+                    <tr key={item.id}>
+                      <td>
+                        {dateLabel(item.createdAt)}
+                        <small>
+                          {item.isExpired
+                            ? "Arquivos expirados"
+                            : `Disponível até ${dateLabel(item.expiresAt)}`}
+                        </small>
+                      </td>
+                      <td>{item.fileCount}</td>
+                      <td>
+                        <span
+                          className={`history-status ${item.isExpired ? "expired" : ""}`}
+                        >
+                          {statuses[item.status] ?? "Em processamento"}
+                        </span>
+                      </td>
+                      <td>
+                        {item.completedCount} de {item.fileCount}
+                        {item.failedCount > 0 && (
+                          <small>{item.failedCount} com falha</small>
+                        )}
+                        {item.pendingCount > 0 && (
+                          <small>{item.pendingCount} pendente(s)</small>
+                        )}
+                      </td>
+                      <td>
+                        {item.reviewUrl ? (
+                          <Link
+                            href={
+                              embedded
+                                ? `${item.reviewUrl}?return_to=${encodeURIComponent("/conversions?view=batches")}`
+                                : item.reviewUrl
+                            }
+                            className="secondary-button small"
                           >
-                            {statuses[item.status] ?? "Em processamento"}
+                            Abrir lote <ArrowRight size={14} />
+                          </Link>
+                        ) : (
+                          <span className="history-unavailable">
+                            Indisponível
                           </span>
-                        </td>
-                        <td>
-                          {item.completedCount} de {item.fileCount}
-                          {item.failedCount > 0 && (
-                            <small>{item.failedCount} com falha</small>
-                          )}
-                          {item.pendingCount > 0 && (
-                            <small>{item.pendingCount} pendente(s)</small>
-                          )}
-                        </td>
-                        <td>
-                          {item.reviewUrl ? (
-                            <Link
-                              href={
-                                embedded
-                                  ? `${item.reviewUrl}?return_to=${encodeURIComponent("/conversions?view=batches")}`
-                                  : item.reviewUrl
-                              }
-                              className="secondary-button small"
-                            >
-                              Abrir lote <ArrowRight size={14} />
-                            </Link>
-                          ) : (
-                            <span className="history-unavailable">
-                              Indisponível
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ),
-                  )}
+                        )}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
-            {embedded && (
-              <nav
-                className="history-pagination"
-                aria-label="Paginação dos lotes"
-              >
-                <button
-                  className="secondary-button small"
-                  disabled={cursors.length === 1}
-                  onClick={() => setCursors((current) => current.slice(0, -1))}
-                >
-                  Anterior
-                </button>
-                <span>Página {cursors.length}</span>
-                <button
-                  className="secondary-button small"
-                  disabled={!page.nextCursor}
-                  onClick={() =>
-                    setCursors((current) => [...current, page.nextCursor!])
-                  }
-                >
-                  Próxima
-                </button>
-              </nav>
-            )}
           </>
         ) : (
           <div className="history-state">
@@ -217,6 +196,27 @@ export function DashboardPage({
               <Plus size={16} /> Criar conversão real
             </Link>
           </div>
+        )}
+        {embedded && page && (
+          <nav className="history-pagination" aria-label="Paginação dos lotes">
+            <button
+              className="secondary-button small"
+              disabled={cursors.length === 1}
+              onClick={() => setCursors((current) => current.slice(0, -1))}
+            >
+              Anterior
+            </button>
+            <span>Página {cursors.length}</span>
+            <button
+              className="secondary-button small"
+              disabled={!page.nextCursor}
+              onClick={() =>
+                setCursors((current) => [...current, page.nextCursor!])
+              }
+            >
+              Próxima
+            </button>
+          </nav>
         )}
       </section>
       {!embedded && (

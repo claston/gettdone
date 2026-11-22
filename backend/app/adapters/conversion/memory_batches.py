@@ -84,37 +84,47 @@ class InMemoryConversionBatchRepository:
             return self._snapshot(batch_id)
 
     def list_for_owner(self, *, identity_type: str, identity_id: str, limit: int,
-                       before: tuple[datetime, str] | None = None) -> tuple[ConversionBatchSummary, ...]:
+                       before: tuple[datetime, str] | None = None,
+                       active_only: bool = False) -> tuple[ConversionBatchSummary, ...]:
         with self._lock:
             batches = sorted((batch for batch in self._batches.values()
                               if (batch.identity_type, batch.identity_id) == (identity_type, identity_id)
                               and (before is None or (batch.created_at, batch.batch_id) < before)),
-                             key=lambda batch: (batch.created_at, batch.batch_id), reverse=True)[:limit]
+                             key=lambda batch: (batch.created_at, batch.batch_id), reverse=True)
             summaries = []
             now = datetime.now(timezone.utc)
             terminal = {ConversionJobStatus.COMPLETED, ConversionJobStatus.FAILED, ConversionJobStatus.EXPIRED}
             for batch in batches:
                 records = [self._jobs[job_id] for job_id in self._batch_jobs[batch.batch_id]]
                 available = [record for record in records if record.expires_at > now and record.status != ConversionJobStatus.EXPIRED]
+                if active_only and not available:
+                    continue
                 summaries.append(ConversionBatchSummary(
                     batch_id=batch.batch_id, status=resolve_conversion_batch_status([record.status for record in records]).value,
-                    created_at=batch.created_at, expires_at=max(record.expires_at for record in records), files_count=batch.files_count,
+                    created_at=batch.created_at,
+                    expires_at=max(record.expires_at for record in (available if active_only else records)),
+                    files_count=batch.files_count,
                     completed_count=sum(record.status == ConversionJobStatus.COMPLETED for record in records),
                     failed_count=sum(record.status in {ConversionJobStatus.FAILED, ConversionJobStatus.EXPIRED} for record in records),
                     pending_count=sum(record.status not in terminal for record in records),
                     first_job_id=min((record.job.job_id for record in available), default=None),
                 ))
+                if len(summaries) == limit:
+                    break
             return tuple(summaries)
 
     def mark_uploaded(self, job_id: str) -> ConversionJobRecord:
         return self._transition(job_id, ConversionJobStatus.UPLOADED, {ConversionJobStatus.UPLOADING})
 
     def list_files_for_owner(self, *, identity_type: str, identity_id: str, limit: int,
-                             before: tuple[datetime, str] | None = None) -> tuple[ConversionFileSummary, ...]:
+                             before: tuple[datetime, str] | None = None,
+                             active_only: bool = False) -> tuple[ConversionFileSummary, ...]:
         with self._lock:
+            now = datetime.now(timezone.utc)
             owned = {batch.batch_id for batch in self._batches.values()
                      if (batch.identity_type, batch.identity_id) == (identity_type, identity_id)}
             records = sorted((row for row in self._jobs.values() if row.job.batch_id in owned
+                              and (not active_only or (row.expires_at > now and row.status != ConversionJobStatus.EXPIRED))
                               and (before is None or (row.created_at, row.job.job_id) < before)),
                              key=lambda row: (row.created_at, row.job.job_id), reverse=True)[:limit]
             return tuple(ConversionFileSummary(

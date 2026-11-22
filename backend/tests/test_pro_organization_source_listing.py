@@ -10,11 +10,12 @@ def test_file_listing_paginates_owner_metadata_without_loading_financial_payload
     now = datetime.now(timezone.utc)
     db = sqlite3.connect(":memory:")
     db.row_factory = sqlite3.Row
-    db.execute("CREATE TABLE conversion_batches (batch_id TEXT, identity_type TEXT, identity_id TEXT)")
+    db.execute("CREATE TABLE conversion_batches (batch_id TEXT, identity_type TEXT, identity_id TEXT, expires_at TEXT)")
     db.execute("CREATE TABLE conversion_jobs (job_id TEXT, batch_id TEXT, status TEXT, created_at TEXT, "
                "expires_at TEXT, document TEXT, result_payload TEXT)")
     for number, owner in [(1, "owner"), (2, "owner"), (3, "other")]:
-        db.execute("INSERT INTO conversion_batches VALUES (?, 'user', ?)", (f"batch_{number}", owner))
+        db.execute("INSERT INTO conversion_batches VALUES (?, 'user', ?, ?)",
+                   (f"batch_{number}", owner, (now + timedelta(hours=24)).isoformat()))
         db.execute("INSERT INTO conversion_jobs VALUES (?, ?, 'completed', ?, ?, ?, ?)",
             (f"job_{number}", f"batch_{number}", now.isoformat(), (now + timedelta(hours=24)).isoformat(),
              json.dumps({"filename": f"extrato-{number}.pdf", "storage_key": "private-storage-reference"}),
@@ -55,5 +56,20 @@ def test_file_listing_paginates_owner_metadata_without_loading_financial_payload
         assert len(second) == 1 and second[0].filename == "extrato-1.pdf"
         assert all("result_payload" not in query and "storage_key" not in query and "SELECT *" not in query for query in queries)
         assert all("b.identity_type = %s AND b.identity_id = %s" in query and "LIMIT %s" in query for query in queries)
+        # Expired status, expired job and expired parent are all hidden before LIMIT.
+        for number, status, batch_expiry, job_expiry in [
+            (4, "expired", now + timedelta(days=1), now + timedelta(days=1)),
+            (5, "completed", now + timedelta(days=1), now),
+            (6, "completed", now, now + timedelta(days=1)),
+        ]:
+            db.execute("INSERT INTO conversion_batches VALUES (?, 'user', 'owner', ?)",
+                       (f"batch_{number}", batch_expiry.isoformat()))
+            db.execute("INSERT INTO conversion_jobs VALUES (?, ?, ?, ?, ?, '{}', NULL)",
+                       (f"job_{number}", f"batch_{number}", status, now.isoformat(), job_expiry.isoformat()))
+        active = repository.list_files_for_owner(identity_type="user", identity_id="owner", limit=2, active_only=True)
+        assert [item.job_id for item in active] == ["job_2", "job_1"]
+        assert repository.list_files_for_owner(identity_type="user", identity_id="owner", limit=2, active_only=True,
+                                              before=(active[-1].created_at, active[-1].job_id)) == ()
+        assert db.execute("SELECT COUNT(*) FROM conversion_jobs").fetchone()[0] == 6
     finally:
         db.close()

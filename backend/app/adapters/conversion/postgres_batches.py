@@ -193,19 +193,27 @@ class PostgresConversionBatchRepository:
             return self._snapshot(conn, batch_id)
 
     def list_files_for_owner(self, *, identity_type: str, identity_id: str, limit: int,
-                             before: tuple[datetime, str] | None = None) -> tuple[ConversionFileSummary, ...]:
+                             before: tuple[datetime, str] | None = None,
+                             active_only: bool = False) -> tuple[ConversionFileSummary, ...]:
         boundary = " AND (j.created_at < %s OR (j.created_at = %s AND j.job_id < %s))" if before else ""
         params: list[object] = [identity_type, identity_id]
+        availability = ""
+        expiry = "j.expires_at"
+        if active_only:
+            now = self._normalize_datetime(self.clock())
+            availability = " AND j.status <> 'expired' AND j.expires_at > %s AND b.expires_at > %s"
+            params.extend([now, now])
+            expiry = "CASE WHEN b.expires_at < j.expires_at THEN b.expires_at ELSE j.expires_at END"
         if before:
             params.extend([before[0], before[0], before[1]])
         params.append(limit)
         with self._connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(f"""
-                    SELECT j.job_id, j.batch_id, j.status, j.created_at, j.expires_at,
+                    SELECT j.job_id, j.batch_id, j.status, j.created_at, {expiry} AS expires_at,
                         j.document->>'filename' AS filename
                     FROM {self._jobs_table} j JOIN {self._batches_table} b ON b.batch_id = j.batch_id
-                    WHERE b.identity_type = %s AND b.identity_id = %s{boundary}
+                    WHERE b.identity_type = %s AND b.identity_id = %s{availability}{boundary}
                     ORDER BY j.created_at DESC, j.job_id DESC LIMIT %s
                 """, tuple(params))
                 rows = cursor.fetchall()
@@ -215,27 +223,43 @@ class PostgresConversionBatchRepository:
         ) for row in rows)
 
     def list_for_owner(self, *, identity_type: str, identity_id: str, limit: int,
-                       before: tuple[datetime, str] | None = None) -> tuple[ConversionBatchSummary, ...]:
+                       before: tuple[datetime, str] | None = None,
+                       active_only: bool = False) -> tuple[ConversionBatchSummary, ...]:
         # Bound the owner-scoped headers first. Never select job result_payload,
         # uploaded document references or financial rows for the dashboard.
         boundary = " AND (created_at < %s OR (created_at = %s AND batch_id < %s))" if before else ""
         params: list[object] = [identity_type, identity_id]
+        now = self._normalize_datetime(self.clock())
+        availability = ""
+        if active_only:
+            # Exclude unavailable batches before LIMIT, including batches whose
+            # header is retained but every child has expired or been cleaned up.
+            availability = f""" AND expires_at > %s AND EXISTS (
+                SELECT 1 FROM {self._jobs_table} available
+                WHERE available.batch_id = owner_batch.batch_id
+                  AND available.status <> 'expired' AND available.expires_at > %s)"""
+            params.extend([now, now])
         if before:
             params.extend([before[0], before[0], before[1]])
-        params.extend([limit, self._normalize_datetime(self.clock())])
+        params.append(limit)
+        job_expiry = "MAX(j.expires_at)"
+        if active_only:
+            job_expiry = "MAX(CASE WHEN j.status <> 'expired' AND j.expires_at > %s THEN j.expires_at END)"
+            params.append(now)
+        params.append(now)
         with self._connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(f"""
                     WITH owned_batches AS (
-                        SELECT batch_id, status, files_count, created_at, expires_at FROM {self._batches_table}
-                        WHERE identity_type = %s AND identity_id = %s{boundary}
+                        SELECT batch_id, status, files_count, created_at, expires_at FROM {self._batches_table} owner_batch
+                        WHERE identity_type = %s AND identity_id = %s{availability}{boundary}
                         ORDER BY created_at DESC, batch_id DESC LIMIT %s
                     )
                     SELECT b.batch_id, b.status, b.files_count, b.created_at, b.expires_at,
                         SUM(CASE WHEN j.status = 'completed' THEN 1 ELSE 0 END) AS completed_count,
                         SUM(CASE WHEN j.status IN ('failed', 'expired') THEN 1 ELSE 0 END) AS failed_count,
                         SUM(CASE WHEN j.status NOT IN ('completed', 'failed', 'expired') THEN 1 ELSE 0 END) AS pending_count,
-                        MAX(j.expires_at) AS job_expires_at,
+                        {job_expiry} AS job_expires_at,
                         MIN(CASE WHEN j.status <> 'expired' AND j.expires_at > %s THEN j.job_id END) AS first_job_id
                     FROM owned_batches b LEFT JOIN {self._jobs_table} j ON j.batch_id = b.batch_id
                     GROUP BY b.batch_id, b.status, b.files_count, b.created_at, b.expires_at

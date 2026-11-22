@@ -60,11 +60,13 @@ class ConversionBatchRepository(Protocol):
     def list_files_for_owner(
         self, *, identity_type: str, identity_id: str, limit: int,
         before: tuple[datetime, str] | None = None,
+        active_only: bool = False,
     ) -> tuple[ConversionFileSummary, ...]: ...
 
     def list_for_owner(
         self, *, identity_type: str, identity_id: str, limit: int,
         before: tuple[datetime, str] | None = None,
+        active_only: bool = False,
     ) -> tuple[ConversionBatchSummary, ...]: ...
 
     def create(self, *, batch: ConversionBatch, jobs: list[ConversionJob]) -> ConversionBatchSubmission: ...

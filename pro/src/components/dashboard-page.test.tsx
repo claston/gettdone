@@ -10,7 +10,7 @@ const item: BatchHistoryItem = {
   id: "batch-own",
   status: "completed",
   createdAt: "2026-10-17T12:00:00Z",
-  expiresAt: "2026-10-18T12:00:00Z",
+  expiresAt: "2099-10-18T12:00:00Z",
   isExpired: false,
   fileCount: 5,
   completedCount: 5,
@@ -32,7 +32,7 @@ describe("histórico de lotes no dashboard", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText("Carregando lotes…")).not.toBeInTheDocument();
   });
-  it("lista lotes reais com reabertura, paginação e expirados sem link", async () => {
+  it("lista lotes disponíveis e oculta os expirados mantendo a navegação", async () => {
     const service: BatchHistoryService = {
       list: vi
         .fn()
@@ -59,11 +59,14 @@ describe("histórico de lotes no dashboard", () => {
       `${item.reviewUrl}?return_to=${encodeURIComponent("/conversions?view=batches")}`,
     );
     fireEvent.click(screen.getByRole("button", { name: "Próxima" }));
-    expect(await screen.findByText("Expirado")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Nenhum lote de conversão encontrado."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Expirado")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: "Abrir lote" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("Indisponível")).toBeInTheDocument();
+    expect(screen.queryByText("Indisponível")).not.toBeInTheDocument();
     expect(service.list).toHaveBeenNthCalledWith(
       2,
       "next-page",

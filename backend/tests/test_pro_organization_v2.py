@@ -55,7 +55,7 @@ def test_sparse_filters_find_matches_across_metadata_chunks_and_preserve_paginat
                                created_at=now - timedelta(seconds=n), expires_at=now + timedelta(days=1)) for n in range(205)]
 
     class Repository:
-        def list_files_for_owner(self, *, identity_type, identity_id, limit, before):
+        def list_files_for_owner(self, *, identity_type, identity_id, limit, before, active_only=False):
             assert (identity_type, identity_id) == ("user", "owner")
             return tuple(row for row in records if before is None or (row.created_at, row.job_id) < before)[:limit]
 

@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  documentAvailability,
+  useAvailableImports,
+} from "../use-available-imports";
+
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -75,6 +80,7 @@ export function OrganizationPage({
     error: string | null;
   } | null>(null);
   const current = result?.request === request ? result : null;
+  const items = useAvailableImports(current?.page?.items, documentAvailability);
   const loading = !current;
 
   useEffect(() => {
@@ -384,18 +390,17 @@ export function OrganizationPage({
           </button>
         </div>
       )}
-      {withOrganization && catalog && selected.length > 0 && !loading && (
-        <BulkOrganization
-          items={
-            current?.page?.items.filter((item) =>
-              selected.includes(item.job_id),
-            ) ?? []
-          }
-          catalog={catalog}
-          service={active}
-          onSaved={onBulkSaved}
-        />
-      )}
+      {withOrganization &&
+        catalog &&
+        items.some((item) => selected.includes(item.job_id)) &&
+        !loading && (
+          <BulkOrganization
+            items={items.filter((item) => selected.includes(item.job_id))}
+            catalog={catalog}
+            service={active}
+            onSaved={onBulkSaved}
+          />
+        )}
       {bulkErrors.map((error) => (
         <p role="alert" className={styles.error} key={error}>
           {error}
@@ -417,7 +422,7 @@ export function OrganizationPage({
       ) : (
         current?.page && (
           <>
-            {!current.page.items.length && (
+            {!items.length && (
               <p className={styles.empty}>
                 {current.page.next_cursor
                   ? "Nenhum arquivo com esses filtros nesta página. Consulte a próxima página para continuar."
@@ -425,7 +430,7 @@ export function OrganizationPage({
               </p>
             )}
             <div className={styles.conversions}>
-              {current.page.items.map((item) => (
+              {items.map((item) => (
                 <ConversionOrganization
                   key={`${item.job_id}:${attempt}:${revision}`}
                   item={item}
