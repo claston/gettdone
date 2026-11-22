@@ -3,6 +3,7 @@
 import { FilePlus2, LoaderCircle, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import styles from "./new-conversion-form.module.css";
 import {
   statementWorkService,
   type StatementWorkService,
@@ -20,11 +21,13 @@ export function NewConversionForm({
   workId,
   workService = statementWorkService,
   importContext,
+  onClose,
 }: {
   service?: BatchUploadService;
   workId?: string;
   workService?: StatementWorkService;
   importContext?: { clientId?: string; clientName?: string };
+  onClose?(): void;
 }) {
   const router = useRouter();
   const defaultService = useMemo(
@@ -42,7 +45,9 @@ export function NewConversionForm({
   const [proOptions, setProOptions] = useState<ProConversionOptions | null>(
     null,
   );
-  const [proMode, setProMode] = useState(false);
+  const [selectedProMode, setProMode] = useState(false);
+  const importing = Boolean(importContext);
+  const proMode = !importing && selectedProMode;
   const [proOptionsFailed, setProOptionsFailed] = useState(false);
   const [proOptionsRetrying, setProOptionsRetrying] = useState(false);
   const [proOptionsAttempt, setProOptionsAttempt] = useState(0);
@@ -50,6 +55,7 @@ export function NewConversionForm({
     null,
   );
   useEffect(() => {
+    if (importing) return;
     let active = true;
     activeService
       .getProOptions?.()
@@ -68,7 +74,14 @@ export function NewConversionForm({
     return () => {
       active = false;
     };
-  }, [activeService, proOptionsAttempt]);
+  }, [activeService, proOptionsAttempt, importing]);
+
+  const selectFiles = (selected: File[]) => {
+    if (submitting || createdBatch !== null || !selected.length) return;
+    setFiles(selected);
+    setError(null);
+    setProEstimate(null);
+  };
 
   const submit = async () => {
     if (!files.length || submitting) return;
@@ -120,7 +133,9 @@ export function NewConversionForm({
       setError(
         caught instanceof Error
           ? caught.message
-          : "Não foi possível criar o lote.",
+          : importing
+            ? "Não foi possível importar os documentos. Tente novamente."
+            : "Não foi possível criar o lote.",
       );
     } finally {
       setSubmitting(false);
@@ -129,47 +144,58 @@ export function NewConversionForm({
 
   const Container = importContext ? "section" : "main";
   return (
-    <Container className="standard-page conversion-upload-page">
-      <div className="page-title">
-        <div>
-          <span className="eyebrow">
-            {importContext
-              ? "Importação de documentos"
-              : proMode
-                ? "Conversão PRO"
-                : "Conversão em lote"}
-          </span>
-          {importContext ? (
-            <h2>Importar extratos e comprovantes</h2>
-          ) : (
+    <Container
+      className={
+        importing ? styles.panel : "standard-page conversion-upload-page"
+      }
+      aria-label={importing ? "Importação de documentos" : undefined}
+    >
+      {importing ? (
+        <header className={styles.heading}>
+          <div>
+            <h2>Importar documentos</h2>
+            {importContext?.clientName && (
+              <p>Cliente selecionado: {importContext.clientName}</p>
+            )}
+          </div>
+          {onClose && (
+            <button
+              type="button"
+              className="secondary-button"
+              aria-label="Fechar importação"
+              disabled={submitting}
+              onClick={onClose}
+            >
+              Fechar
+            </button>
+          )}
+        </header>
+      ) : (
+        <div className="page-title">
+          <div>
+            <span className="eyebrow">
+              {proMode ? "Conversão PRO" : "Conversão em lote"}
+            </span>
             <h1>Nova conversão</h1>
-          )}
-          {importContext?.clientName && (
             <p>
-              Cliente: {importContext.clientName}. Após a leitura, confira o
-              titular e confirme a associação dos arquivos.
-            </p>
-          )}
-          <p>
-            {proMode
-              ? "Envie um PDF digitalizado para análise de tabelas e revisão."
-              : importContext
-                ? "Envie até 12 arquivos para importar e revisar em conjunto."
+              {proMode
+                ? "Envie um PDF digitalizado para análise de tabelas e revisão."
                 : "Envie até 12 arquivos para converter e revisar em conjunto."}
-          </p>
-          {workId && (
-            <p>
-              Os arquivos serão vinculados ao trabalho.{" "}
-              <a href={`/works/${encodeURIComponent(workId)}`}>
-                Voltar ao trabalho
-              </a>
             </p>
-          )}
+            {workId && (
+              <p>
+                Os arquivos serão vinculados ao trabalho.{" "}
+                <a href={`/works/${encodeURIComponent(workId)}`}>
+                  Voltar ao trabalho
+                </a>
+              </p>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
-      <section className="upload-card">
-        {proOptionsFailed && (
+      <div className={importing ? styles.content : "upload-card"}>
+        {!importing && proOptionsFailed && (
           <div role="status">
             <p>
               Não foi possível consultar a disponibilidade da Conversão PRO.
@@ -188,7 +214,7 @@ export function NewConversionForm({
             </button>
           </div>
         )}
-        {proOptions?.enabled && (
+        {!importing && proOptions?.enabled && (
           <fieldset disabled={submitting || createdBatch !== null}>
             <legend>Tipo de conversão</legend>
             <label>
@@ -240,30 +266,42 @@ export function NewConversionForm({
             leitura é solicitada, mesmo se a conversão não for concluída.
           </p>
         )}
-        <div className="upload-card-heading">
-          <span className="placeholder-icon">
-            <Upload size={24} />
-          </span>
-          <div>
-            <h2>
-              {importContext
-                ? "Selecione os documentos"
-                : "Selecione os extratos"}
-            </h2>
-            <p>
-              PDF, CSV, XLSX ou OFX. Cada arquivo será enviado diretamente ao
-              armazenamento seguro.
-            </p>
+        {!importing && (
+          <div className="upload-card-heading">
+            <span className="placeholder-icon">
+              <Upload size={24} />
+            </span>
+            <div>
+              <h2>Selecione os extratos</h2>
+              <p>PDF, CSV, XLSX ou OFX.</p>
+            </div>
           </div>
-        </div>
+        )}
 
-        <label className="upload-dropzone">
+        <label
+          className={`upload-dropzone ${importing ? styles.dropzone : ""}`}
+          onDragOver={importing ? (event) => event.preventDefault() : undefined}
+          onDrop={
+            importing
+              ? (event) => {
+                  event.preventDefault();
+                  selectFiles(Array.from(event.dataTransfer.files));
+                }
+              : undefined
+          }
+        >
           <FilePlus2 size={28} />
-          <strong>Escolher arquivos</strong>
+          {importing && <strong>Arraste os arquivos para cá</strong>}
+          <strong>
+            {importing ? "ou Escolher arquivos" : "Escolher arquivos"}
+          </strong>
+          {importing && <span>PDF, CSV, XLSX ou OFX · Até 12 arquivos</span>}
           <span aria-live="polite">
             {files.length
               ? `${files.length} ${files.length === 1 ? "arquivo selecionado" : "arquivos selecionados"}`
-              : "Nenhum arquivo selecionado"}
+              : importing
+                ? ""
+                : "Nenhum arquivo selecionado"}
           </span>
           <input
             aria-label="Selecionar arquivos"
@@ -276,9 +314,7 @@ export function NewConversionForm({
             }
             disabled={submitting || createdBatch !== null}
             onChange={(event) => {
-              setFiles(Array.from(event.currentTarget.files ?? []));
-              setError(null);
-              setProEstimate(null);
+              selectFiles(Array.from(event.currentTarget.files ?? []));
               event.currentTarget.value = "";
             }}
           />
@@ -319,7 +355,7 @@ export function NewConversionForm({
             {error}
           </p>
         )}
-        {proEstimate && (
+        {!importing && proEstimate && (
           <div role="status">
             <p>{proEstimate.pages} páginas serão processadas.</p>
             <p>
@@ -329,6 +365,13 @@ export function NewConversionForm({
             </p>
             <p>Confirme para iniciar a Conversão PRO.</p>
           </div>
+        )}
+
+        {importing && (
+          <p className={styles.guidance}>
+            Após a leitura, confira o titular e confirme a associação dos
+            documentos ao cliente.
+          </p>
         )}
 
         <div className="upload-actions">
@@ -344,7 +387,9 @@ export function NewConversionForm({
               <Upload size={16} />
             )}
             {submitting
-              ? "Preparando lote…"
+              ? importing
+                ? "Importando documentos…"
+                : "Preparando lote…"
               : createdBatch
                 ? importContext
                   ? "Ver documentos enviados"
@@ -358,7 +403,7 @@ export function NewConversionForm({
                     : "Criar lote"}
           </button>
         </div>
-      </section>
+      </div>
     </Container>
   );
 }
