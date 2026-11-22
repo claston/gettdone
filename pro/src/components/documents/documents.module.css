@@ -1,0 +1,163 @@
+.page {
+  width: 100%;
+}
+.page > header {
+  flex-wrap: wrap;
+}
+.page input,
+.page select {
+  font: inherit;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink-900);
+  min-width: 0;
+  max-width: 100%;
+}
+.page p {
+  color: var(--ink-700);
+  line-height: 1.6;
+}
+.search {
+  display: grid;
+  gap: 8px;
+  max-width: 420px;
+  margin: 24px 0;
+}
+.list {
+  display: grid;
+  gap: 12px;
+}
+.client {
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.client p {
+  margin: 6px 0 0;
+}
+.clientName {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink-900);
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.actions a,
+.breadcrumb a {
+  color: var(--blue-700);
+  font-weight: 600;
+}
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 20px;
+  margin: 20px 0;
+}
+.panel h2 {
+  margin-top: 0;
+}
+.fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  border: 0;
+  padding: 0;
+  margin: 18px 0;
+}
+.fields label {
+  display: grid;
+  gap: 7px;
+  flex: 1;
+  min-width: min(220px, 100%);
+}
+.breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+  color: var(--ink-700);
+}
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 24px;
+}
+.tabs a {
+  padding: 12px 0;
+  color: var(--ink-700);
+}
+.tabs a[aria-current="page"] {
+  border-bottom: 2px solid var(--blue-700);
+  color: var(--blue-700);
+  font-weight: 700;
+}
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin: 20px 0;
+}
+.filters a {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 9px 12px;
+  background: var(--surface);
+}
+.filters a[aria-current="page"] {
+  background: var(--blue-100);
+  border-color: var(--blue-700);
+  color: var(--blue-700);
+}
+.document {
+  min-width: 0;
+}
+.document h3 {
+  overflow-wrap: anywhere;
+}
+.type {
+  margin: 0 0 8px;
+  color: var(--ink-700);
+  font-weight: 600;
+}
+.notice {
+  padding: 14px 18px;
+  border-left: 3px solid var(--blue-600);
+  background: var(--blue-50);
+  margin: 18px 0;
+}
+.pagination {
+  display: flex;
+  gap: 16px;
+  margin: 24px 0;
+  flex-wrap: wrap;
+}
+@media (max-width: 650px) {
+  .client {
+    padding: 16px;
+  }
+  .actions {
+    gap: 12px;
+  }
+  .panel {
+    padding: 16px;
+  }
+  .page input,
+  .page select {
+    font-size: 16px;
+  }
+}

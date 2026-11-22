@@ -1,6 +1,17 @@
 import { expect, it } from "vitest";
 import { reviewReturnTo } from "./review-return";
 
+it("preserva apenas o contexto autorizado de Documentos", () => {
+  expect(
+    reviewReturnTo(
+      "/documents?client=client_a&type=statements&batch=batch_a&token=secret",
+    ),
+  ).toBe("/documents?client=client_a&type=statements&batch=batch_a");
+  expect(reviewReturnTo("https://evil.test/documents?client=client_a")).toBe(
+    "/conversions?view=batches",
+  );
+});
+
 it("preserva filtros de conversões e rejeita destinos externos", () => {
   expect(
     reviewReturnTo(

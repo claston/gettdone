@@ -19,10 +19,12 @@ export function NewConversionForm({
   service,
   workId,
   workService = statementWorkService,
+  importContext,
 }: {
   service?: BatchUploadService;
   workId?: string;
   workService?: StatementWorkService;
+  importContext?: { clientId?: string; clientName?: string };
 }) {
   const router = useRouter();
   const defaultService = useMemo(
@@ -100,6 +102,13 @@ export function NewConversionForm({
         batchId = (await activeService.submitPro(proEstimate.batchId)).batchId;
       }
       batchId ??= (await activeService.createAndSubmit(files)).batchId;
+      if (importContext) {
+        setCreatedBatch(batchId);
+        const query = new URLSearchParams({ batch: batchId });
+        if (importContext.clientId) query.set("client", importContext.clientId);
+        router.push(`/documents?${query}`);
+        return;
+      }
       if (context) {
         setCreatedBatch(batchId);
         await workService.attachBatch(context, batchId);
@@ -118,18 +127,35 @@ export function NewConversionForm({
     }
   };
 
+  const Container = importContext ? "section" : "main";
   return (
-    <main className="standard-page conversion-upload-page">
+    <Container className="standard-page conversion-upload-page">
       <div className="page-title">
         <div>
           <span className="eyebrow">
-            {proMode ? "Conversão PRO" : "Conversão em lote"}
+            {importContext
+              ? "Importação de documentos"
+              : proMode
+                ? "Conversão PRO"
+                : "Conversão em lote"}
           </span>
-          <h1>Nova conversão</h1>
+          {importContext ? (
+            <h2>Importar extratos e comprovantes</h2>
+          ) : (
+            <h1>Nova conversão</h1>
+          )}
+          {importContext?.clientName && (
+            <p>
+              Cliente: {importContext.clientName}. Após a leitura, confira o
+              titular e confirme a associação dos arquivos.
+            </p>
+          )}
           <p>
             {proMode
               ? "Envie um PDF digitalizado para análise de tabelas e revisão."
-              : "Envie até 12 arquivos para converter e revisar em conjunto."}
+              : importContext
+                ? "Envie até 12 arquivos para importar e revisar em conjunto."
+                : "Envie até 12 arquivos para converter e revisar em conjunto."}
           </p>
           {workId && (
             <p>
@@ -219,7 +245,11 @@ export function NewConversionForm({
             <Upload size={24} />
           </span>
           <div>
-            <h2>Selecione os extratos</h2>
+            <h2>
+              {importContext
+                ? "Selecione os documentos"
+                : "Selecione os extratos"}
+            </h2>
             <p>
               PDF, CSV, XLSX ou OFX. Cada arquivo será enviado diretamente ao
               armazenamento seguro.
@@ -316,16 +346,20 @@ export function NewConversionForm({
             {submitting
               ? "Preparando lote…"
               : createdBatch
-                ? "Retomar vínculo com o trabalho"
+                ? importContext
+                  ? "Ver documentos enviados"
+                  : "Retomar vínculo com o trabalho"
                 : proMode
                   ? proEstimate
                     ? "Iniciar Conversão PRO"
                     : "Verificar Conversão PRO"
-                  : "Criar lote"}
+                  : importContext
+                    ? "Importar documentos"
+                    : "Criar lote"}
           </button>
         </div>
       </section>
-    </main>
+    </Container>
   );
 }
 

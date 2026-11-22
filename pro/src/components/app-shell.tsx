@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileStack,
+  FolderOpen,
   LogOut,
   Menu,
   Settings,
@@ -13,14 +14,15 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 import { useOptionalProSession } from "@/components/pro-session-gate";
 import type { ProUser } from "@/data/pro-auth-service";
 
 const navigation = [
   { href: "/dashboard", label: "Clientes", icon: Building2 },
-  { href: "/conversions", label: "Conversões", icon: FileStack },
+  { href: "/documents", label: "Documentos", icon: FolderOpen },
+  { href: "/conversions", label: "Conversor", icon: FileStack },
 ];
 
 export function AppShell({
@@ -83,23 +85,31 @@ export function AppShell({
           {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
         <nav aria-label="Navegação principal">
+          <span className="nav-section">Escritório</span>
           {items.map((item) => {
             const Icon = item.icon;
             const active =
               pathname.startsWith(item.href) ||
+              (item.href === "/documents" &&
+                pathname.startsWith("/financial/")) ||
               (item.icon === CalendarDays &&
                 pathname.startsWith("/demo/financial/") &&
                 !pathname.endsWith("/clients"));
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={active ? "active" : ""}
-                title={collapsed ? item.label : undefined}
-              >
-                <Icon size={18} />
-                <span>{item.label}</span>
-              </Link>
+              <Fragment key={item.href}>
+                {item.href === "/conversions" && (
+                  <span className="nav-section">Ferramentas</span>
+                )}
+                <Link
+                  href={item.href}
+                  className={active ? "active" : ""}
+                  aria-current={active ? "page" : undefined}
+                  title={collapsed ? item.label : undefined}
+                >
+                  <Icon size={18} />
+                  <span>{item.label}</span>
+                </Link>
+              </Fragment>
             );
           })}
         </nav>

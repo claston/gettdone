@@ -1,282 +1,303 @@
-"""Synthetic desktop/mobile acceptance for OFX-62 using the production editor."""
+"""Synthetic acceptance for clients, documents and the retained client editor.
+
+Run against a production build with NEXT_PUBLIC_API_URL=/ and the internal
+organization UI disabled, as in the workspace CI suite.
+"""
 
 import json
-import re
-import unicodedata
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from playwright.sync_api import expect, sync_playwright
-from smoke_pro_pdf_sync import synthetic_pdf
+
+
+def document(identifier, filename, category, client_id, *, expired=False):
+    return {
+        "job_id": identifier, "batch_id": f"batch_{identifier}", "filename": filename,
+        "category": category, "status": "expired" if expired else "completed", "is_expired": expired,
+        "created_at": "2026-10-01T12:00:00Z",
+        "expires_at": "2020-01-01T00:00:00Z" if expired else "2099-01-01T00:00:00Z",
+        "movement_start_date": None, "movement_end_date": None,
+        "review_url": None if expired else f"/review/batch_{identifier}/{identifier}",
+        "context": {"client_id": client_id, "account_id": None, "period_ids": [], "version": 0},
+    }
 
 
 def run(base):
     output = Path("tmp/pro-organization")
     output.mkdir(parents=True, exist_ok=True)
-    clients = [{"id": "client_browser", "name": "Padaria São José", "tax_id": "12345678000190", "trade_name": "",
-                "updated_at": "v1", "historical_count": 5, "available_count": 2, "expired_count": 3,
-                "attention_count": 1, "accounts": [
-                    {"id": "a1", "bank_code": "341", "account_number": "••1234", "statement_count": 3},
-                    {"id": "a2", "bank_code": "077", "account_number": "••5678", "statement_count": 2}]}]
-    pending = [{"job_id": "job_pending", "batch_id": "batch_pending", "filename": "identificar.pdf", "version": 0,
-                "source": {"holder_name": "Titular a conferir", "references": [{"page": 2, "line": 2}]}}]
-    jobs = [{"job_id": f"job_{index}", "source_batch_id": f"batch_{index}", "filename": f"extrato-{index}.csv",
+    clients = [
+        {"id": "client_browser", "name": "Padaria São José", "tax_id": "12345678000190",
+         "trade_name": "", "updated_at": "v1"},
+        {"id": "client_empty", "name": "Cliente sem documentos", "tax_id": None, "trade_name": "", "updated_at": "v1"},
+        {"id": "client_expired", "name": "Cliente com arquivo expirado", "tax_id": None,
+         "trade_name": "", "updated_at": "v1"},
+    ]
+    catalog = {"clients": clients, "accounts": [], "periods": []}
+    documents = [
+        document(f"job_{index}", f"extrato-{index}.ofx", "statements", "client_browser") for index in (1, 2)
+    ] + [
+        document("receipt", "comprovante.pdf", "receipts", "client_browser"),
+        document("unknown", "identificar.pdf", "unclassified", None),
+        document("expired", "expirado.ofx", "statements", "client_expired", expired=True),
+    ]
+    jobs = [{"job_id": f"job_{index}", "source_batch_id": f"batch_job_{index}", "filename": f"extrato-{index}.ofx",
              "status": "completed", "expires_at": "2099-01-01T00:00:00Z", "analysis_id": f"an_{index}",
-             "result": {"analysis": {"file_type": "csv", "bank_name": "Itaú" if index == 1 else "Inter",
+             "result": {"analysis": {"file_type": "ofx", "bank_name": "Itaú" if index == 1 else "Inter",
                                       "updated_at": "2026-10-28T12:00:00Z", "preview_transactions": [
                  {"transaction_id": f"tx_{index}", "date": "2026-10-01", "description": f"PIX origem {index}", "amount": 12,
                   "warning_types": ["ambiguous_amount"] if index == 2 else []}]}}}
             for index in (1, 2)]
-    writes, errors, held_lists, held_refreshes = [], [], [], []
-    loading = {"hold_list": True, "hold_refresh": True}
-    document_state = {"requests": 0, "unavailable": True}
-    original_pdf = synthetic_pdf(6)
+    fiscal = {"features": {"invoices": True, "taxes": False, "revenue": False}, "documents": [], "imports": [],
+              "movements": [], "links": [], "suggestions": [], "categories": {}, "movement_count": 0,
+              "next_offset": None, "access_expires_at": None, "truncated": False,
+              "summary": {"documented_sales": None, "operating_receipts": None, "unclassified_inflows": None,
+                          "excluded_inflows": None, "tax_payments": {}, "pending_documents": 0,
+                          "coverage": "unknown", "consolidation": "observed", "basis": ""}}
+    writes, errors, unexpected, held_catalogs, held_documents, held_refreshes = [], [], [], [], [], []
+    loading = {"catalog": True, "documents": True, "refresh": True}
+    imported = document("imported", "novo-extrato.ofx", "statements", None)
 
-    def dashboard(selected=None, active_only=False):
-        selected = clients if selected is None else selected
-        active = [c for c in selected if c["available_count"] > 0]
-        return {"totals": {"statements": 3, "ready": 2, "attention": 1}, "clients": active if active_only else selected,
-                "pending": pending, "next_cursor": None, "client_count": len(active if active_only else selected),
-                "all_client_count": len(selected), "active_client_count": len(active), "pending_count": len(pending)}
+    def document_page(query):
+        selected = documents
+        if query.get("batch_id"):
+            selected = [item for item in selected if item["batch_id"] == query["batch_id"][0]]
+        elif query.get("unassigned") == ["true"]:
+            selected = [item for item in selected if item["context"]["client_id"] is None]
+        elif query.get("client_id"):
+            selected = [item for item in selected if item["context"]["client_id"] == query["client_id"][0]]
+        if query["category"] != ["all"]:
+            selected = [item for item in selected if item["category"] == query["category"][0]]
+        return {"items": selected, "next_cursor": None}
 
     def intercept(route):
-        path = urlsplit(route.request.url).path
-        method = route.request.method
+        url = urlsplit(route.request.url)
+        path, method = url.path, route.request.method
+        if path.startswith("/api/") and method != "GET":
+            assert route.request.headers.get("x-ofx-pro-client") == "web"
+            writes.append(path)
         if path == "/auth/me":
             route.fulfill(json={"user_id": "synthetic", "name": "Usuário Sintético", "email": "synthetic@example.test"})
-        elif path == "/api/pro/conversion-batches/batch_pending/jobs/job_pending/document":
-            assert method == "GET" and route.request.headers.get("x-ofx-pro-client") == "web"
-            document_state["requests"] += 1
-            if document_state["unavailable"]:
-                route.fulfill(status=404, json={"detail": "Conversion document not found."})
-            else:
-                route.fulfill(body=original_pdf, content_type="application/pdf")
-        elif path == "/api/pro/receipts/documents/job_pending/confirm":
-            body = route.request.post_data_json
-            assert body["name"] == "Page 2 transaction 0" and body["expected_version"] == 0
-            assert body["tax_id"] == "12345678000190"
-            writes.append(path)
-            pending.clear()
-            route.fulfill(json={"id": "client_browser"})
-        elif path == "/api/pro/receipts":
-            assert parse_qs(urlsplit(route.request.url).query).get("sort") == ["name"]
-            if loading["hold_list"]:
-                held_lists.append(route)
+        elif path == "/api/pro/organization/catalog":
+            if loading["catalog"]:
+                held_catalogs.append(route)
                 return
-            route.fulfill(json=dashboard(active_only=parse_qs(urlsplit(route.request.url).query).get("active_only") == ["true"]))
-        elif path == "/api/pro/receipts/search":
-            assert method == "POST" and not urlsplit(route.request.url).query
-            term = route.request.post_data_json["query"]
-            text = "".join(c for c in unicodedata.normalize("NFD", term.casefold()) if not unicodedata.combining(c))
-            digits = re.sub(r"\D", "", term)
-            selected = [c for c in clients if text in "".join(
-                x for x in unicodedata.normalize("NFD", c["name"].casefold()) if not unicodedata.combining(x))
-                or (digits and digits in c["tax_id"])]
-            route.fulfill(json=dashboard(selected, active_only=route.request.post_data_json.get("active_only", False)))
-        elif path == "/api/pro/receipts/refresh":
-            if loading["hold_refresh"]:
-                held_refreshes.append(route)
-                return
-            route.fulfill(json={"next_cursor": None})
+            route.fulfill(json=catalog)
+        elif path == "/api/pro/organization/clients" and method == "POST":
+            client = {"id": "client_new", "updated_at": "v1", **route.request.post_data_json}
+            clients.append(client)
+            route.fulfill(status=201, json=client)
         elif path == "/api/pro/receipts/clients/client_browser" and method == "PATCH":
             body = route.request.post_data_json
-            writes.append(path)
             assert body["expected_updated_at"] == clients[0]["updated_at"]
             clients[0].update(name=body["name"], updated_at="v2")
             route.fulfill(json={"id": "client_browser"})
+        elif path == "/api/pro/documents":
+            if loading["documents"]:
+                held_documents.append(route)
+                return
+            route.fulfill(json=document_page(parse_qs(url.query)))
+        elif path.endswith("/fiscal"):
+            assert path == "/api/pro/financial-center/clients/client_browser/fiscal"
+            route.fulfill(json=fiscal)
+        elif path == "/api/pro/receipts/refresh":
+            if loading["refresh"]:
+                held_refreshes.append(route)
+                return
+            route.fulfill(json={"next_cursor": None})
+        elif path == "/api/pro/receipts/documents/imported/confirm":
+            assert route.request.post_data_json == {
+                "client_id": clients[0]["id"], "name": clients[0]["name"], "tax_id": clients[0]["tax_id"],
+                "expected_version": 0,
+            }
+            imported["context"].update(client_id=clients[0]["id"], version=1)
+            route.fulfill(json={"id": clients[0]["id"]})
+        elif path == "/api/conversion-runtime":
+            route.fulfill(json={"direct_batch_enabled": True, "upload_mode": "direct_s3",
+                                "execution_mode": "sqs_lambda", "batch_max_files": 12})
+        elif path == "/api/pro/conversion-options":
+            route.fulfill(json={"available": False})
+        elif path == "/api/pro/conversion-batches" and method == "POST":
+            body = route.request.post_data_json
+            assert len(body["files"]) == 1 and body["files"][0]["filename"] == imported["filename"]
+            route.fulfill(json={"batch_id": imported["batch_id"], "uploads": [
+                {"job_id": imported["job_id"], "url": base + "/synthetic-upload", "fields": {}}]})
+        elif path == "/synthetic-upload":
+            assert method == "POST" and b"novo-extrato.ofx" in route.request.post_data_buffer
+            route.fulfill(status=204)
+        elif path == "/api/pro/conversion-batches/batch_imported/submit":
+            assert route.request.post_data_json == {}
+            documents.append(imported)
+            route.fulfill(json={"batch_id": imported["batch_id"], "status": "completed"})
+        elif path == "/api/pro/conversion-batches/batch_job_1":
+            route.fulfill(json={"batch_id": "batch_job_1", "status": "completed", "jobs": [jobs[0]]})
         elif path == "/api/pro/receipts/clients/client_browser/workspace":
             route.fulfill(json={"batch_id": "client_browser", "client_name": clients[0]["name"], "jobs": jobs, "next_cursor": None})
-        elif path.endswith("/review"):
-            writes.append(path)
-            assert "/batch_2/jobs/job_2/review" in path
+        elif path == "/api/pro/conversion-batches/batch_job_2/jobs/job_2/review":
             route.fulfill(json={"reviewed_at": "2026-10-28T12:00:00Z"})
         elif path == "/api/pro/receipts/clients/client_browser/export":
             route.fulfill(body=b"PK-synthetic", content_type="application/zip", headers={"X-Conversion-Count": "2"})
-        elif path == "/api/pro/conversion-batches":
-            route.fulfill(json={"items": [], "next_cursor": None})
-        elif path == "/api/pro/conversions":
+        elif path in ("/api/pro/conversion-batches", "/api/pro/conversions"):
             route.fulfill(json={"items": [], "next_cursor": None})
         elif path.startswith("/telemetry/"):
             route.fulfill(status=204)
+        elif path.startswith(("/api/", "/auth/")):
+            unexpected.append(f"{method} {path}")
+            route.fulfill(status=404, json={"detail": "Unexpected synthetic request"})
         else:
             route.continue_()
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.route("**/*", intercept)
         try:
-            page = browser.new_page(viewport={"width": 1440, "height": 1000})
-            page.context.grant_permissions(["clipboard-read", "clipboard-write"])
-            page.on("pageerror", lambda error: errors.append(str(error)))
-            page.route("**/*", intercept)
             page.goto(base + "/dashboard")
             expect(page.get_by_role("heading", name="Clientes", exact=True)).to_be_visible()
-            expect(page.get_by_role("status")).to_have_text("Carregando extratos...")
-            expect(page.get_by_role("button", name="Atualizando extratos...")).to_be_disabled()
-            page.screenshot(path=str(output / "received-loading.png"), full_page=True)
-            loading["hold_list"] = False
-            held_lists.pop().fulfill(json={"totals": {"statements": 3, "ready": 2, "attention": 1}, "clients": clients,
-                                          "pending": pending, "next_cursor": None})
-            expect(page.get_by_text("2 disponíveis / 5 extratos no histórico")).to_be_visible()
-            expect(page.get_by_role("button", name="Atualizando extratos...")).to_be_disabled()
-            expect(page.get_by_text("Integração real", exact=True)).to_have_count(0)
-            expect(page.get_by_label("Resumo dos extratos").locator("strong")).to_have_text(["3", "2", "1"])
-            expect(page.get_by_text("3 expirados", exact=True)).to_be_visible()
-            expect(page.get_by_text("Itaú · Conta ••1234")).to_be_visible()
-            expect(page.get_by_role("tab", name="Com conversões ativas (1)", exact=True)).to_have_attribute("aria-selected", "true")
-            expect(page.get_by_role("link", name="Conferir identificar.pdf")).to_have_count(0)
-            page.get_by_role("tab", name="Não identificados (1)", exact=True).click()
-            expect(page.get_by_role("heading", name="Identificação pendente")).to_be_visible()
-            expect(page.get_by_role("link", name="Conferir identificar.pdf")).to_be_visible()
-            expect(page.get_by_role("link", name="Padaria São José", exact=False)).to_have_count(0)
-            page.screenshot(path=str(output / "received-pending-desktop.png"), full_page=True)
-            page.get_by_role("tab", name="Não identificados (1)", exact=True).press("ArrowLeft")
-            expect(page.get_by_role("tab", name="Identificados (1)", exact=True)).to_be_focused()
-            loading["hold_refresh"] = False
-            assert len(held_refreshes) == 1, "Tab switching must not restart synchronization"
-            held_refreshes.pop().fulfill(json={"next_cursor": None})
-            expect(page.get_by_role("button", name="Atualizar extratos", exact=True)).to_be_enabled()
-            # An expired-only client remains in history but never appears in the active list.
-            clients.append({**clients[0], "id": "expired_browser", "name": "Cliente expirado",
-                            "available_count": 0, "historical_count": 1, "expired_count": 1, "attention_count": 0})
-            page.get_by_role("tab", name=re.compile(r"^Com conversões ativas")).click()
-            expect(page.get_by_role("tab", name="Identificados (2)", exact=True)).to_be_visible()
-            expect(page.get_by_text("Cliente expirado", exact=True)).to_have_count(0)
-            page.get_by_role("tab", name="Identificados (2)", exact=True).click()
-            expect(page.get_by_text("Cliente expirado", exact=True)).to_be_visible()
-            expect(page.get_by_text("Nenhuma conversão ativa", exact=True)).to_be_visible()
-            clients.pop()
-            page.get_by_role("button", name="Atualizar extratos", exact=True).click()
-            expect(page.get_by_role("tab", name="Identificados (1)", exact=True)).to_be_visible()
-            assert document_state["requests"] == 0, "PDF must load only when checking identity"
-            page.get_by_role("tab", name="Não identificados (1)", exact=True).click()
-            page.get_by_role("button", name="Conferir identificação", exact=True).click()
-            expect(page.get_by_role("region", name="Documento original").get_by_role("alert")).to_contain_text(
-                "PDF indisponível ou expirado")
-            page.get_by_label("Nome do cliente", exact=True).fill("Rascunho preservado")
-            document_state["unavailable"] = False
-            page.get_by_role("button", name="Recarregar PDF", exact=True).click()
-            expect(page.get_by_text("Página 2 de 6", exact=True)).to_be_visible(timeout=15000)
-            expect(page.get_by_label("Nome do cliente", exact=True)).to_have_value("Rascunho preservado")
-            copy_pdf_name(page)
-            for label in ("Aumentar zoom do PDF", "Próxima página do PDF", "Página anterior do PDF"):
-                page.get_by_role("button", name=label, exact=True).click()
-            page.get_by_role("button", name="Ajustar à largura", exact=True).click()
-            expect(page.get_by_label("Nome do cliente", exact=True)).to_have_value("Page 2 transaction 0")
-            assert not writes, "Viewing, zooming and copying must not submit identification"
-            wait_pdf_render(page)
-            page.screenshot(path=str(output / "identity-pdf-desktop.png"), full_page=True)
-            for _ in range(4):
-                page.get_by_role("button", name="Próxima página do PDF", exact=True).click()
-            expect(page.get_by_text("Esta página não tem texto selecionável.", exact=False)).to_be_visible()
-            page.get_by_role("button", name="Cancelar", exact=True).click()
-            expect(page.get_by_role("region", name="Documento original")).to_have_count(0)
-            page.get_by_role("tab", name="Identificados (1)", exact=True).click()
-            expect(page.get_by_role("navigation", name="Navegação principal").get_by_role("link")).to_have_count(2)
-            expect(page.locator(".mobile-menu")).not_to_be_visible()
+            expect(page.get_by_role("status")).to_have_text("Carregando clientes…")
+            loading["catalog"] = False
+            assert len(held_catalogs) == 1
+            held_catalogs.pop().fulfill(json=catalog)
+            for client in clients:
+                expect(page.get_by_role("link", name=client["name"], exact=True)).to_be_visible()
+            navigation = page.get_by_role("navigation", name="Navegação principal")
+            expect(navigation.get_by_role("link")).to_have_text(["Clientes", "Documentos", "Conversor"])
+            expect(page.locator(".mobile-menu")).to_be_hidden()
+            assert not writes, "Listing clients must not trigger synchronization or writes"
             search = page.get_by_role("searchbox", name="Buscar por nome, CPF ou CNPJ")
             for query in ("pada", "SAO JOSE", "12.345.678/0001-90", "12345678000190"):
-                with page.expect_response(lambda response: response.url.endswith("/api/pro/receipts/search")
-                                          and response.request.post_data_json["query"] == query):
-                    search.fill(query)
-                expect(page.get_by_role("link", name="Padaria São José", exact=False)).to_be_visible()
+                search.fill(query)
+                expect(page.get_by_role("link", name="Padaria São José", exact=True)).to_be_visible()
+                expect(page.get_by_role("link", name="Cliente sem documentos", exact=True)).to_have_count(0)
             search.fill("inexistente")
-            expect(page.get_by_text("Nenhum cliente encontrado", exact=True)).to_be_visible()
-            page.get_by_role("tab", name="Não identificados (1)", exact=True).click()
-            expect(page.get_by_role("link", name="Conferir identificar.pdf")).to_be_visible()
-            page.get_by_role("tab", name="Identificados (0)", exact=True).click()
-            page.get_by_role("button", name="Limpar busca", exact=True).click()
-            expect(page.get_by_role("link", name="Padaria São José", exact=False)).to_be_visible()
-            page.get_by_role("button", name="Editar Padaria São José").click()
+            expect(page.get_by_text("Nenhum cliente encontrado.", exact=True)).to_be_visible()
+            search.fill("")
+            page.get_by_role("button", name="Novo cliente", exact=True).click()
+            page.get_by_label("Nome do cliente", exact=True).fill("Novo cliente sem extratos")
+            page.get_by_role("button", name="Salvar cliente", exact=True).click()
+            expect(page.get_by_role("link", name="Novo cliente sem extratos", exact=True)).to_be_visible()
+            page.get_by_role("button", name="Editar Padaria São José", exact=True).click()
             page.get_by_label("Nome do cliente", exact=True).fill("Padaria corrigida")
-            page.get_by_role("button", name="Salvar identificação").click()
-            expect(page.get_by_role("link", name="Padaria corrigida", exact=False)).to_be_visible()
-            page.screenshot(path=str(output / "received-desktop.png"), full_page=True)
-            page.get_by_role("link", name="Padaria corrigida", exact=False).click()
-            expect(page.get_by_role("heading", name="Extratos do cliente")).to_be_visible()
-            options = page.get_by_role("listbox", name="Extratos do cliente").get_by_role("option")
+            page.get_by_role("button", name="Salvar cliente", exact=True).click()
+            expect(page.get_by_role("link", name="Padaria corrigida", exact=True)).to_be_visible()
+            page.screenshot(path=str(output / "clients-desktop.png"), full_page=True)
+
+            page.get_by_role("link", name="Padaria corrigida", exact=True).click()
+            expect(page).to_have_url(base + "/documents?client=client_browser")
+            expect(page.get_by_role("status")).to_have_text("Carregando documentos…")
+            loading["documents"] = False
+            assert len(held_documents) == 1
+            route = held_documents.pop()
+            route.fulfill(json=document_page(parse_qs(urlsplit(route.request.url).query)))
+            expect(page.get_by_role("article")).to_have_count(3)
+            page.get_by_role("button", name="Atualizar documentos", exact=True).click()
+            expect(page.get_by_role("button", name="Atualizando…", exact=True)).to_be_disabled()
+            types = page.get_by_role("navigation", name="Tipos de documento")
+            types.get_by_role("link", name="Extratos", exact=True).click()
+            expect(page.get_by_role("article")).to_have_count(2)
+            assert len(held_refreshes) == 1, "Changing filters must not restart synchronization"
+            loading["refresh"] = False
+            held_refreshes.pop().fulfill(json={"next_cursor": None})
+            expect(page.get_by_role("button", name="Atualizar documentos", exact=True)).to_be_enabled()
+            expect(types.get_by_role("link", name="Extratos", exact=True)).to_have_attribute("aria-current", "page")
+            page.get_by_role("article", name="extrato-1.ofx").get_by_role("link", name="Abrir revisão").click()
+            expect(page.locator("tr[data-transaction-id='tx_1']")).to_be_visible()
+            page.get_by_role("link", name="Voltar aos documentos", exact=True).click()
+            expect(page).to_have_url(base + "/documents?client=client_browser&type=statements")
+            types.get_by_role("link", name="Comprovantes", exact=True).click()
+            expect(page.get_by_role("article")).to_have_count(1)
+            expect(page.get_by_role("article", name="comprovante.pdf")).to_be_visible()
+            types.get_by_role("link", name="Notas fiscais", exact=True).click()
+            expect(page.get_by_role("article")).to_have_count(0)
+            expect(page.get_by_label("Importar nota XML ou PDF")).to_be_attached()
+            expect(page.get_by_role("combobox", name="Cliente", exact=True)).to_have_value("client_browser")
+            types.get_by_role("link", name="Todos", exact=True).click()
+            expect(types.get_by_role("link", name="Todos", exact=True)).to_have_attribute("aria-current", "page")
+            expect(page.get_by_role("article")).to_have_count(3)
+            page.get_by_role("combobox", name="Cliente", exact=True).select_option("unassigned")
+            expect(page.get_by_role("article")).to_have_count(1)
+            expect(page.get_by_role("article", name="identificar.pdf")).to_be_visible()
+            types.get_by_role("link", name="Extratos", exact=True).click()
+            expect(types.get_by_role("link", name="Extratos", exact=True)).to_have_attribute("aria-current", "page")
+            expect(page.get_by_role("article")).to_have_count(0)
+            page.get_by_role("combobox", name="Cliente", exact=True).select_option("client_expired")
+            expired = page.get_by_role("article", name="expirado.ofx")
+            expect(expired).to_be_visible()
+            expect(expired).to_contain_text("O arquivo expirou.")
+            expect(expired.get_by_role("link", name="Abrir revisão")).to_have_count(0)
+            page.screenshot(path=str(output / "expired-document.png"), full_page=True)
+
+            # Import through the client context. Association must remain an explicit action.
+            page.get_by_role("combobox", name="Cliente", exact=True).select_option("client_browser")
+            expect(page.get_by_role("heading", name="Padaria corrigida", exact=True)).to_be_visible()
+            page.get_by_role("button", name="Importar documentos", exact=True).click()
+            upload = page.get_by_role("region", name="Importação de documentos")
+            upload.get_by_label("Selecionar arquivos").set_input_files({
+                "name": imported["filename"], "mimeType": "application/x-ofx", "buffer": b"OFXHEADER:100\n"})
+            upload.get_by_role("button", name="Importar documentos", exact=True).click()
+            expect(page.get_by_role("button", name="Confirmar associação ao cliente", exact=True)).to_be_visible()
+            assert parse_qs(urlsplit(page.url).query) == {"client": ["client_browser"], "batch": ["batch_imported"]}
+            assert imported["context"]["client_id"] is None
+            assert not any(path.endswith("/confirm") for path in writes)
+            page.get_by_role("button", name="Confirmar associação ao cliente", exact=True).click()
+            expect(page.get_by_role("button", name="Confirmar associação ao cliente", exact=True)).to_have_count(0)
+            expect(page.get_by_role("article", name=imported["filename"])).to_contain_text("Padaria corrigida")
+            assert imported["context"]["version"] == 1
+            page.get_by_role("link", name="Ver todos os documentos do cliente", exact=True).click()
+            expect(page.get_by_role("article")).to_have_count(4)
+            page.screenshot(path=str(output / "documents-desktop.png"), full_page=True)
+
+            # Retained deep links still support reviewing multiple original batches and exporting.
+            page.goto(base + "/client-review/client_browser")
+            expect(page.get_by_role("heading", name="Revisão de documentos")).to_be_visible()
+            options = page.get_by_role("listbox", name="Documentos do envio").get_by_role("option")
             expect(options).to_have_count(2)
-            options.filter(has_text="extrato-2.csv").click()
+            options.filter(has_text="extrato-2.ofx").click()
             expect(page.locator("tr[data-transaction-id='tx_2']")).to_be_visible()
             page.get_by_role("button", name="Marcar revisado", exact=True).click()
             expect(page.get_by_text("Revisado", exact=True)).to_be_visible()
             with page.expect_download():
                 page.get_by_role("button", name="Exportar extratos", exact=True).click()
-            page.get_by_role("link", name="Clientes", exact=True).click()
-            expect(page.get_by_role("heading", name="Clientes", exact=True)).to_be_visible()
+            page.get_by_role("link", name="Voltar aos documentos", exact=True).click()
+            expect(page).to_have_url(base + "/documents?client=client_browser&type=statements")
+
             page.set_viewport_size({"width": 390, "height": 844})
-            expect(page.locator(".mobile-menu")).to_be_visible()
-            expect(page.get_by_role("tab", name="Identificados (1)", exact=True)).to_be_visible()
-            expect(page.get_by_role("tab", name="Com conversões ativas (1)", exact=True)).to_be_visible()
-            expect(page.get_by_role("tab", name="Não identificados (1)", exact=True)).to_be_visible()
-            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Mobile overflow"
-            page.screenshot(path=str(output / "received-mobile.png"), full_page=True)
-            page.get_by_role("tab", name="Não identificados (1)", exact=True).click()
-            expect(page.get_by_role("button", name="Conferir identificação", exact=True)).to_be_visible()
-            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Pending mobile overflow"
-            page.screenshot(path=str(output / "received-pending-mobile.png"), full_page=True)
-            page.get_by_role("button", name="Conferir identificação", exact=True).click()
-            expect(page.get_by_text("Página 2 de 6", exact=True)).to_be_visible()
-            copy_pdf_name(page)
-            page.get_by_label("CPF/CNPJ do titular", exact=True).fill("12345678000190")
-            page.get_by_role("button", name="Aumentar zoom do PDF", exact=True).click()
-            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Inline PDF mobile overflow"
-            wait_pdf_render(page)
-            page.screenshot(path=str(output / "identity-pdf-mobile.png"), full_page=True)
-            page.get_by_role("button", name="Salvar identificação", exact=True).click()
-            expect(page.get_by_text("Todos os extratos estão identificados.", exact=True)).to_be_visible()
-            expect(page.get_by_role("region", name="Documento original")).to_have_count(0)
-            page.get_by_role("link", name="Ver conversões e lotes", exact=True).click()
+            for path, screen in [("/dashboard", "clients"), ("/documents?client=unassigned", "unassigned"),
+                                 ("/documents?client=client_browser", "documents")]:
+                page.goto(base + path)
+                expect(page.get_by_role("button", name="Abrir menu", exact=True)).to_be_visible()
+                if screen == "clients":
+                    expect(page.get_by_role("link", name="Cliente sem documentos", exact=True)).to_be_visible()
+                else:
+                    expect(page.get_by_role("article")).to_have_count(1 if screen == "unassigned" else 4)
+                assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), f"{screen} mobile overflow"
+                page.screenshot(path=str(output / f"{screen}-mobile.png"), full_page=True)
+            page.get_by_role("button", name="Importar documentos", exact=True).click()
+            expect(page.get_by_role("heading", name="Importar extratos e comprovantes")).to_be_visible()
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Import mobile overflow"
+            page.get_by_role("button", name="Abrir menu", exact=True).click()
+            page.get_by_role("navigation", name="Navegação móvel").get_by_role("link", name="Conversor", exact=True).click()
+            expect(page).to_have_url(base + "/conversions")
             page.get_by_role("button", name="Todos os arquivos", exact=True).click()
             expect(page.get_by_role("heading", name="Todas as conversões")).to_be_visible()
-            expect(page.get_by_text("Integração real", exact=True)).to_have_count(0)
             expect(page.get_by_role("link", name="Cadastrar clientes e contas")).to_have_count(0)
             for legacy in ("/clients", "/periods", "/works", "/works/work_hidden"):
                 page.goto(base + legacy)
                 expect(page).to_have_url(base + "/dashboard")
-            assert len(writes) == 3 and not errors, (writes, errors)
-            (output / "summary.json").write_text(json.dumps({"result": "PASS", "writes": writes, "browser_errors": errors,
-                "checks": ["initial loading", "background refresh", "accessible tabs", "three KPIs", "clients and subordinate accounts",
-                           "inline edit", "pending identity",
-                           "flat multi-batch editor", "original batch review", "scoped export", "desktop/mobile",
-                           "independent converter", "legacy screens hidden", "inline PDF evidence page", "PDF copy/paste",
-                           "PDF retry preserves form", "image-only page", "inline PDF mobile", "identity confirmation"]},
-                ensure_ascii=False, indent=2), encoding="utf-8")
-            print("OFX-62 browser PASS: dashboard, inline editing, multi-batch workspace, scoped export and mobile.")
+            assert len(writes) == 7 and not errors and not unexpected, (writes, errors, unexpected)
+            summary = {"result": "PASS", "writes": writes, "browser_errors": errors, "unexpected_requests": unexpected,
+                       "checks": ["client and document loading", "client roster without documents", "accent and tax ID search",
+                                  "client creation and optimistic edit", "explicit refresh across filters", "document categories",
+                                  "unassigned documents", "expired document review blocked", "review return preserves filters",
+                                  "client import and explicit association", "multi-batch editor compatibility", "original batch review",
+                                  "scoped export", "desktop/mobile", "independent converter", "legacy screens hidden"]}
+            (output / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+            print("PRO clients/documents browser PASS: roster, filters, import, confirmation, review, export and mobile.")
         except Exception:
             page.screenshot(path=str(output / "received-failure.png"), full_page=True)
-            print("Browser errors:", errors)
-            print(page.get_by_role("region", name="Documento original").all_inner_texts())
+            print("Browser errors:", errors, "Unexpected requests:", unexpected)
+            print(page.locator("body").aria_snapshot())
             raise
         finally:
             browser.close()
-
-
-def copy_pdf_name(page):
-    text = page.locator(".textLayer span").filter(has_text=re.compile(r"^Page 2 transaction 0$"))
-    expect(text).to_be_visible()
-    text.evaluate("""element => {
-        const range = document.createRange();
-        range.selectNodeContents(element);
-        const selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
-    }""")
-    page.keyboard.press("Control+c")
-    assert page.evaluate("navigator.clipboard.readText()") == "Page 2 transaction 0"
-    field = page.get_by_label("Nome do cliente", exact=True)
-    field.fill("")
-    field.press("Control+v")
-    expect(field).to_have_value("Page 2 transaction 0")
-
-
-def wait_pdf_render(page):
-    # Text selection can finish before the canvas repaints after zoom/navigation.
-    page.wait_for_function("""() => {
-        const canvas = document.querySelector('.react-pdf__Page__canvas');
-        if (!canvas || !canvas.width || !canvas.height || canvas.style.display === 'none') return false;
-        const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
-        for (let i = 0; i < pixels.length; i += 4) {
-            if (pixels[i + 3] > 0 && pixels[i] < 128 && pixels[i + 1] < 128 && pixels[i + 2] < 128) return true;
-        }
-        return false;
-    }""")

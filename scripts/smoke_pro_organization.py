@@ -194,7 +194,7 @@ def run_legacy(base: str) -> None:
             expect(page.get_by_label("Filtrar por cliente")).to_have_value("clients-1")
             file = page.get_by_role("article", name="extrato-mensal.csv")
             file.get_by_role("link", name="Abrir revisão").click()
-            page.get_by_role("link", name="Voltar às conversões").click()
+            page.get_by_role("link", name="Voltar ao Conversor").click()
             expect(page.get_by_label("Filtrar por cliente")).to_have_value("clients-1")
             expect(page.get_by_label("Filtrar por período")).to_have_value("periods-1")
             page.screenshot(path=str(output / "v2-desktop.png"), full_page=True)

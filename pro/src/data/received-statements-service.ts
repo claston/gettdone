@@ -111,7 +111,7 @@ async function read(path: string, init?: RequestInit) {
     throw new Error(
       await readApiError(
         response,
-        "Não foi possível carregar os extratos. Conversões continua disponível.",
+        "Não foi possível carregar os extratos. O Conversor continua disponível.",
       ),
     );
   return response.json();
