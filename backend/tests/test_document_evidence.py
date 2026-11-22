@@ -1,6 +1,16 @@
+import pytest
+
 from app.application.default_conversion_pipeline import build_default_conversion_pipeline
 from app.application.document_evidence import parse_evidence_pages
+from app.application.office_scope import document_scope
 from synthetic_pdf_corpus.native_text_pdf import generate_native_text_pdf
+
+
+@pytest.fixture(autouse=True)
+def pro_scope():
+    with document_scope(True):
+        yield
+
 
 RECEIPT = """COMPROVANTE PIX TRANSFERENCIA
 20 jul. 2026, via SISPag

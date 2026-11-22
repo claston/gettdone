@@ -318,7 +318,9 @@ class PostgresMovementRepository:
                 plan = conn.execute(f'''SELECT s.id FROM {self.p}user_plan_subscriptions s
                     JOIN {self.p}plan_versions p ON p.id = s.plan_version_id
                     WHERE s.user_id=%s AND s.status='active' AND p.batch_conversion_enabled
-                        AND p.code IN ('essencial','profissional','escritorio') FOR SHARE OF s,p''', (scope.actor_id,)).fetchone()
+                        AND p.code IN ('essencial','profissional','escritorio','escritorio_documentos')
+                        AND (p.code <> 'escritorio_documentos' OR s.ended_at::timestamptz > CURRENT_TIMESTAMP)
+                        FOR SHARE OF s,p''', (scope.actor_id,)).fetchone()
                 if not plan:
                     raise AnalysisAccessDeniedError
             receipt = conn.execute(f"""SELECT * FROM {self.p}movement_operations

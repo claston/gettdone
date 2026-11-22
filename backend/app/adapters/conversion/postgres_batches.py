@@ -141,12 +141,14 @@ class PostgresConversionBatchRepository:
                 for job in jobs:
                     pro_column = ", ocr_mode" if job.ocr_mode != "standard" else ""
                     pro_value = ", %s" if job.ocr_mode != "standard" else ""
+                    product_column = ', product' if job.product != 'free' else ''
+                    product_value = ', %s' if product_column else ''
                     cursor.execute(
                         f"""
                         INSERT INTO {self._jobs_table} (
                             job_id, batch_id, idempotency_key, status, document, identity,
-                            preflight_result, created_at, updated_at, expires_at{pro_column}
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s{pro_value})
+                            preflight_result, created_at, updated_at, expires_at{pro_column}{product_column}
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s{pro_value}{product_value})
                         """,
                         (
                             job.job_id,
@@ -159,7 +161,7 @@ class PostgresConversionBatchRepository:
                             batch.created_at,
                             batch.created_at,
                             expires_at,
-                        ) + ((job.ocr_mode,) if pro_column else ()),
+                        ) + ((job.ocr_mode,) if pro_column else ()) + ((job.product,) if product_column else ()),
                     )
             return ConversionBatchSubmission(snapshot=self._snapshot(conn, batch.batch_id), created=True)
 
@@ -723,6 +725,7 @@ class PostgresConversionBatchRepository:
             identity=IdentityContext(**identity_payload),
             preflight_result=DocumentPreflightResult(**preflight_payload),
             ocr_mode=row.get("ocr_mode", "standard"),
+            product=row.get('product', 'free'),
         )
         result_analysis_id = str(row.get("result_analysis_id") or "").strip()
         result_payload = row.get("result_payload")

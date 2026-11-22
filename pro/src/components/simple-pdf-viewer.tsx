@@ -18,10 +18,12 @@ export default function SimplePdfViewer({
   blob,
   initialPage,
   reload,
+  hint = "Selecione e copie o texto do PDF para preencher a identificação.",
 }: {
   blob: Blob;
   initialPage: number;
   reload(): void;
+  hint?: string;
 }) {
   const viewport = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(320);
@@ -47,9 +49,7 @@ export default function SimplePdfViewer({
   const fail = () => setFailed(true);
   return (
     <>
-      <p className={styles.hint}>
-        Selecione e copie o texto do PDF para preencher a identificação.
-      </p>
+      <p className={styles.hint}>{hint}</p>
       <div
         className={styles.controls}
         role="group"

@@ -50,6 +50,7 @@ class ConversionBatchService:
         files: list[ConversionBatchFile],
         idempotency_key: str,
         ocr_mode: str = "standard",
+        product: str = "free",
     ) -> PreparedConversionBatch:
         if ocr_mode not in {"standard", "pro"}:
             raise ValueError("Unknown OCR mode")
@@ -84,11 +85,14 @@ class ConversionBatchService:
                 identity=identity,
                 idempotency_key=f"{normalized_idempotency_key}:{index}",
                 ocr_mode=ocr_mode,
+                product=product,
             )
             for index, item in enumerate(initially_prepared)
         ]
         submission = self.repository.create(batch=batch, jobs=jobs)
         if not submission.created:
+            if any(record.job.product != product for record in submission.snapshot.jobs):
+                raise ValueError('Este envio já existe em outro fluxo. Inicie um novo envio.')
             if any(record.job.ocr_mode != ocr_mode for record in submission.snapshot.jobs):
                 raise ValueError("Idempotency key was already used with a different conversion mode.")
             self._validate_idempotent_files(submission.snapshot, files)

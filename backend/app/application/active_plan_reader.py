@@ -1,5 +1,6 @@
 """Read-only subscription query shared by API and worker runtimes."""
 
+from datetime import datetime, timezone
 from typing import Callable
 
 
@@ -27,10 +28,11 @@ def read_active_user_plan(
         FROM user_plan_subscriptions ups
         JOIN plan_versions pv ON pv.id = ups.plan_version_id
         WHERE ups.user_id = ? AND ups.status = 'active'
+          AND (pv.code <> 'escritorio_documentos' OR ups.ended_at > ?)
         ORDER BY pv.version DESC
         LIMIT 1
         """,
-        (user_id,),
+        (user_id, datetime.now(timezone.utc).isoformat()),
     )
     if row is None:
         return None

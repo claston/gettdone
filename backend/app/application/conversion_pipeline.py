@@ -194,7 +194,9 @@ class ConversionPipeline:
         ):
             document_type_classification = initial_document_type_classification
         enforce_document_routing(document_type_classification)
-        if document_type_classification.document_type in {'bank_receipt', 'fiscal_invoice'} and not any(
+        from app.application.office_scope import pro_documents_enabled
+
+        if pro_documents_enabled() and document_type_classification.document_type in {'bank_receipt', 'fiscal_invoice'} and not any(
             part.get('included_in_statement') for part in parsed_document.document_parts or []
         ):
             from app.application.document_evidence import parse_evidence_pages

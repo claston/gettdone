@@ -92,6 +92,8 @@ def run(base):
             assert body["expected_updated_at"] == clients[0]["updated_at"]
             clients[0].update(name=body["name"], updated_at="v2")
             route.fulfill(json={"id": "client_browser"})
+        elif path == "/api/pro/documents/options" and method == "GET":
+            route.fulfill(json={"enabled": False, "max_package_files": 30, "max_package_bytes": 64 * 1024 * 1024})
         elif path == "/api/pro/documents":
             if loading["documents"]:
                 held_documents.append(route)

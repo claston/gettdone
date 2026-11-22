@@ -60,11 +60,11 @@ class ConversionProQuota:
         if (
             not self.policy.enabled
             or identity.identity_type != "user"
-            or identity.plan_code not in {"essencial", "profissional", "escritorio"}
+            or identity.plan_code not in {"essencial", "profissional", "escritorio", "escritorio_documentos"}
         ):
             return False
         plan = self.access._read_active_user_plan(user_id=identity.identity_id)
-        return bool(plan and plan["code"] in {"essencial", "profissional", "escritorio"})
+        return bool(plan and plan["code"] in {"essencial", "profissional", "escritorio", "escritorio_documentos"})
 
     def require_access(self, identity):
         if not self.eligible(identity):

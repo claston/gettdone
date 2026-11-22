@@ -1,6 +1,7 @@
 "use client";
 
 import { CreditCard, UserRound } from "lucide-react";
+import Link from "next/link";
 
 import { useProSession } from "./pro-session-gate";
 import styles from "./account-page.module.css";
@@ -15,7 +16,7 @@ export function AccountPage() {
   const unit =
     user.quota_mode === "pages"
       ? "páginas"
-      : user.quota_mode === "conversion"
+      : ["conversion", "document_conversion"].includes(user.quota_mode ?? "")
         ? "conversões"
         : null;
   const limit = user.quota_limit;
@@ -66,7 +67,22 @@ export function AccountPage() {
               <dd>{plan || "Plano não informado"}</dd>
             </div>
           </dl>
+          {user.quota_mode === "document_conversion" && (
+            <p>
+              Cada PDF convertido em dados estruturados consome uma conversão,
+              independentemente do número de páginas, dentro dos limites do
+              plano. OFX, CSV e Excel não consomem conversões. Organização,
+              conferência e downloads não geram novo consumo.
+            </p>
+          )}
           <h3>Uso do plano</h3>
+          {user.quota_mode === "document_conversion" && (
+            <p>
+              <Link href="/escritorio">
+                Recursos, retenção, contratação e suporte
+              </Link>
+            </p>
+          )}
           {usage ? (
             <dl className={styles.usage}>
               {usage.map(({ label, value }) => (

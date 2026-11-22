@@ -35,6 +35,7 @@ from app.routers.classification_shadow import router as classification_shadow_ro
 from app.routers.conversion_pro import router as conversion_pro_router
 from app.routers.financial_center import router as financial_center_router
 from app.routers.marketing import router as marketing_router
+from app.routers.office_documents import router as office_documents_router
 from app.routers.pro_conversions import router as pro_conversions_router
 from app.routers.pro_documents import router as pro_documents_router
 from app.routers.pro_fiscal import router as pro_fiscal_router
@@ -125,6 +126,7 @@ app.include_router(conversion_batches_router)
 app.include_router(conversion_pro_router)
 app.include_router(pro_organization_router)
 app.include_router(pro_documents_router)
+app.include_router(office_documents_router)
 app.include_router(pro_conversions_router)
 app.include_router(statement_works_router)
 app.include_router(received_statements_router)

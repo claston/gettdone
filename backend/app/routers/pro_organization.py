@@ -202,10 +202,26 @@ def organize_conversion(
     owner: str = Depends(organization_owner),
     service: OrganizationService = Depends(organization_service),
     batches: ConversionBatchService | None = Depends(get_conversion_batch_service),
+    access: AccessControlService = Depends(get_access_control_service),
 ) -> dict:
     snapshot = owned_snapshot(batches, owner, batch_id)
     if not any(record.job.job_id == job_id for record in snapshot.jobs):
         raise HTTPException(404, "Conversão não encontrada.")
+    if read_bool_env('PRO_OFFICE_ENABLED', default=False):
+        from app.application.office_documents import OfficeReviews
+        from app.application.office_telemetry import office_event
+        from app.routers.office_documents import current_record
+        record = next(record for record in snapshot.jobs if record.job.job_id == job_id)
+        record = current_record(record, owner)
+        if record.expires_at <= datetime.now(timezone.utc):
+            raise HTTPException(410, 'O prazo de acesso a este documento terminou.')
+        with organization_errors(), service.db.connect() as conn:
+            result = service.save_context_in_connection(conn, owner, job_id=job_id, **request.model_dump())
+            OfficeReviews(service.db).associate(conn, owner, job_id, result, record.expires_at)
+            conn.commit()
+        if result['client_id']:
+            office_event(access, owner, 'office_client_identified')
+        return result
     with organization_errors():
         return service.save_context(owner, job_id=job_id, **request.model_dump())
 

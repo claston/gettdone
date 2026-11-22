@@ -212,6 +212,15 @@ class DocumentConversionPipeline:
         )
 
     def run_job(
+        self, *, job: ConversionJob, document: UploadedDocument, hooks: ConversionExecutionHooks,
+    ) -> ConversionPipelineResult:
+        from app.application.office_scope import document_scope
+
+        with document_scope(job.product == 'pro' and job.identity.identity_type == 'user'
+                            and job.identity.batch_conversion_enabled):
+            return self._run_job(job=job, document=document, hooks=hooks)
+
+    def _run_job(
         self,
         *,
         job: ConversionJob,
@@ -392,7 +401,8 @@ class DocumentConversionPipeline:
         except FileTooLargeError as exc:
             setattr(exc, "_max_upload_size_bytes", preflight_policy.max_upload_size_bytes)
             raise
-        self.quota_validator_service.ensure_conversion_quota_available(identity=identity)
+        billing_options = {'file_type': request.document.file_type, 'product': 'pro'} if request.job.product == 'pro' else {}
+        self.quota_validator_service.ensure_conversion_quota_available(identity=identity, **billing_options)
         if request.document.file_type == "pdf":
             try:
                 runtime.pdf_representation_classification = self.pdf_representation_classifier(
@@ -596,6 +606,7 @@ class DocumentConversionPipeline:
             identity=identity,
             analysis=analysis,
             idempotency_key=request.job.job_id,
+            **({'product': 'pro'} if request.job.product == 'pro' else {}),
         )
         quota_remaining = quota_result.quota_remaining
         if identity.identity_type == "user":
