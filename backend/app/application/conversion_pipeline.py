@@ -194,6 +194,15 @@ class ConversionPipeline:
         ):
             document_type_classification = initial_document_type_classification
         enforce_document_routing(document_type_classification)
+        if document_type_classification.document_type in {'bank_receipt', 'fiscal_invoice'} and not any(
+            part.get('included_in_statement') for part in parsed_document.document_parts or []
+        ):
+            from app.application.document_evidence import parse_evidence_pages
+
+            financial = parse_evidence_pages(list(parsed_document.source_page_texts or [extracted_text or '']),
+                                             document_type=document_type_classification.document_type)
+            return self._run_financial_document(document, replace(parsed_document, financial_document=financial,
+                transactions=[], canonical_transactions=[]), analysis_id, parse_ms, classification=document_type_classification)
         is_payables_report = document_type_classification.document_type == ACCOUNTS_PAYABLE_REPORT
 
         classify_start = perf_counter()
@@ -434,11 +443,12 @@ class ConversionPipeline:
         )
 
 
-    def _run_financial_document(self, document, parsed, analysis_id, parse_ms) -> ProcessingResult:
+    def _run_financial_document(self, document, parsed, analysis_id, parse_ms, classification=None) -> ProcessingResult:
         financial = deepcopy(parsed.financial_document)
         digest = hashlib.sha256(document.raw_bytes).hexdigest()
         financial["source_document_sha256"] = digest
-        classification = self.document_type_classifier(document.filename, document.raw_bytes, extracted_text=parsed.extracted_text)
+        classification = classification or self.document_type_classifier(
+            document.filename, document.raw_bytes, extracted_text=parsed.extracted_text)
         financial["classification"] = {"document_type": classification.document_type, "confidence": classification.confidence,
                                        "evidence": classification.evidence, "version": classification.classifier_version}
         financial["representation"] = classify_pdf_representation(document.raw_bytes).representation

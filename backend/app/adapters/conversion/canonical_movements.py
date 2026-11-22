@@ -293,8 +293,11 @@ class PostgresMovementRepository:
         if expected_version is not None and (
                 not isinstance(expected_version, int) or isinstance(expected_version, bool) or expected_version < 1):
             raise ValueError("A positive expected version is required")
-        if set(overrides) - {"opening_balance", "closing_balance", "bank_branch", "account_number", "bank_code"}:
+        if set(overrides) - {"opening_balance", "closing_balance", "bank_branch", "account_number", "bank_code",
+                             "document_type", "actor_id"}:
             raise ValueError("Unsupported review option")
+        if overrides.get('document_type') and overrides.get('actor_id') != scope.actor_id:
+            raise AnalysisAccessDeniedError
         if mark_reviewed and (edits or any(value is not None for value in overrides.values())):
             raise ValueError("Review confirmation must reference an unchanged version")
         for name in ("opening_balance", "closing_balance"):
@@ -371,10 +374,12 @@ class PostgresMovementRepository:
             if mark_reviewed:
                 content["updated_at"] = content["reviewed_at"] = now.isoformat()
             else:
-                service.apply(content, deepcopy(edits), **overrides)
+                service.apply(content, deepcopy(edits), **overrides,
+                    **({'expected_updated_at': content['updated_at'], 'operation_id': operation_id}
+                       if overrides.get('document_type') else {}))
             rows = content["report_transactions"]
             financial_change = (any(patch.get("action", "update") != "annotate" for patch in edits)
-                                or any(overrides.get(key) is not None for key in ("opening_balance", "closing_balance")))
+                                or any(overrides.get(key) is not None for key in ("opening_balance", "closing_balance", "document_type")))
             if financial_change:
                 # Existing heuristic matches do not carry member versions. A
                 # financial change invalidates the entire document's suggestions.

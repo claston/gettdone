@@ -330,15 +330,18 @@ def get_convert_report(
     )
 
 
-@router.post("/convert-edits/{processing_id}", response_model=ConvertEditsResponse)
-@router.get("/convert-edits/{processing_id}/operations/{operation_id}", response_model=ConvertEditsResponse)
+@router.post("/convert-edits/{processing_id}", response_model=ConvertEditsResponse, response_model_exclude_unset=True)
+@router.get("/convert-edits/{processing_id}/operations/{operation_id}",
+            response_model=ConvertEditsResponse, response_model_exclude_unset=True)
 @router.get(
     "/api/pro/convert-edits/{processing_id}/operations/{operation_id}",
     response_model=ConvertEditsResponse,
+    response_model_exclude_unset=True,
 )
 @router.post(
     "/api/pro/convert-edits/{processing_id}",
     response_model=ConvertEditsResponse,
+    response_model_exclude_unset=True,
     dependencies=[Depends(require_pro_browser_request)],
 )
 def apply_convert_edits(
@@ -402,6 +405,13 @@ def apply_convert_edits(
                     raise HTTPException(status_code=404, detail="Edit operation not found.")
                 return _edit_response(result)
             operation_options = {"operation_id": payload.operation_id} if payload.operation_id else {}
+            if payload.document_type is not None:
+                if (not request.url.path.startswith('/api/pro/') or identity.identity_type != 'user'
+                        or not identity.batch_conversion_enabled or not payload.job_id or not payload.batch_id):
+                    raise HTTPException(403, 'A alteração de tipo exige acesso ativo ao PRO e um documento do seu lote.')
+                if not payload.operation_id or not payload.expected_updated_at:
+                    raise HTTPException(400, 'Recarregue o documento antes de alterar seu tipo.')
+                operation_options.update(document_type=payload.document_type, actor_id=identity.identity_id)
             if hasattr(active_service, "canonical"):
                 operation_options.update(expected_version=payload.expected_version,
                                          expected_movement_versions=payload.expected_movement_versions)
@@ -423,7 +433,8 @@ def apply_convert_edits(
             )
             if payload.job_id and batch_service and result.get("authority") != "postgres_v1":
                 try:
-                    batch_service.repository.update_analysis(payload.job_id, analysis=ConvertEditsResponse(**result).model_dump())
+                    batch_service.repository.update_analysis(
+                        payload.job_id, analysis=ConvertEditsResponse(**result).model_dump(exclude_unset=True))
                 except Exception:
                     # Artifacts are already committed. Never report a failed save after success,
                     # which would make a retry conflict with the newly persisted version.
@@ -487,7 +498,7 @@ def _select_convert_report_service(
 def _edit_response(result):
     legacy = ConvertEditsResponse(**result)
     if result.get("authority") == "postgres_v1":
-        return JSONResponse({**legacy.model_dump(mode="json"), **{key: result[key] for key in
+        return JSONResponse({**legacy.model_dump(mode="json", exclude_unset=True), **{key: result[key] for key in
                             ("authority", "version", "movement_ids", "movement_versions")}})
     return legacy
 

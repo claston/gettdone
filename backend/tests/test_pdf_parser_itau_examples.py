@@ -181,8 +181,9 @@ ITAU_EXAMPLE_CASES = {
         """,
     },
     "comprovante_transferencia": {
-        "profile": "itau_comprovante_transferencia_pix_v1",
-        "amounts": [-4000.0],
+        "profile": "bank_receipt_events_v1",
+        "amounts": [],
+        "evidence_amount": '4000.00',
         "text": """
         Itaú 30 horas Comprovante de Transferência
         dados do pagador nome do pagador CPF / CNPJ do pagador agência/conta
@@ -207,6 +208,11 @@ def test_parse_pdf_transactions_supports_itau_visual_examples(case_name: str, mo
 
     assert result.layout.layout_name == case["profile"]
     assert [transaction.amount for transaction in result.transactions] == case["amounts"]
+    if 'evidence_amount' in case:
+        amount = next(item for item in result.financial_document['observations'] if item['amounts'])
+        assert amount['amounts'] == {'value': case['evidence_amount']}
+        assert 'ofx' not in result.financial_document['export']['available_formats']
+        return
     ofx = build_ofx_statement(result.transactions)
     assert ofx.count("<STMTTRN>") == len(case["amounts"])
     assert all(f"<TRNAMT>{amount:.2f}" in ofx for amount in case["amounts"])

@@ -331,6 +331,8 @@ class TempAnalysisStorage(LegacyAnalysisState):
         account_number: str | None = None,
         bank_code: str | None = None,
         operation_id: str | None = None,
+        document_type: str | None = None,
+        actor_id: str | None = None,
     ) -> dict[str, object]:
         analysis_dir = self._resolve_analysis_dir(analysis_id)
         if self._is_expired(analysis_dir):
@@ -352,6 +354,7 @@ class TempAnalysisStorage(LegacyAnalysisState):
             opening_balance=opening_balance, closing_balance=closing_balance,
             bank_branch=bank_branch, account_number=account_number, bank_code=bank_code,
             operation_id=operation_id,
+            **({'document_type': document_type, 'actor_id': actor_id} if document_type is not None else {}),
         )
         if result.replayed:
             return self._edit_result(analysis_id, content, operation_id)

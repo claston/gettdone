@@ -36,9 +36,12 @@ def test_audit_documents_over_http(kind, tmp_path, monkeypatch):
         owner = {"anonymous_fingerprint": "fp-audit-http"}
         response = client.post("/convert", data=owner, files={"file": (filename, raw, mime)})
         if kind == "receipt":
-            assert response.status_code == 400, response.text
-            assert "comprovante de pagamento" in response.text
-            assert response.json()["detail"]["document_type"] == "bank_receipt"
+            assert response.status_code == 200, response.text
+            analysis = response.json()['analysis']
+            assert analysis['document_type'] == 'bank_receipt'
+            assert analysis['preview_transactions'] == [] and analysis['net_total'] == 0
+            assert client.get(f"/convert-report/{analysis['analysis_id']}", params={**owner, 'format': 'ofx'}).status_code == 400
+            assert client.get(f"/convert-report/{analysis['analysis_id']}", params={**owner, 'format': 'xlsx'}).status_code == 200
             return
         assert response.status_code == 200, response.text
         analysis = response.json()["analysis"]

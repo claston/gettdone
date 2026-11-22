@@ -50,6 +50,8 @@ import { FiscalConversionImport } from "./fiscal-conversion-import";
 import { isFiscalInvoiceFailure } from "@/domain/conversion-failure";
 import { TransactionGrid } from "./transaction-grid";
 import { FinancialReportReview } from "./financial-report-review";
+import { DocumentEvidenceReview } from "./document-evidence-review";
+import { DocumentTypeControl } from "./document-type-control";
 import { ReviewPanels } from "./review-panels";
 import {
   sourceLocation,
@@ -322,7 +324,12 @@ function ConversionNavigator({
               <span className="conversion-file">{conversion.fileName}</span>
               <span className="conversion-meta">
                 {conversion.fileName.split(".").pop()?.toUpperCase()} ·{" "}
-                {conversion.period} · {conversion.transactionCount} lanç.
+                {conversion.financialDocument &&
+                ["bank_receipt", "fiscal_invoice"].includes(
+                  conversion.financialDocument.document_type,
+                )
+                  ? "Documento para conferência"
+                  : `${conversion.period} · ${conversion.transactionCount} lanç.`}
               </span>
             </span>
             <span className="conversion-state">
@@ -757,6 +764,14 @@ export function WorkspaceScreen({
             </button>
           </div>
         )}
+        {activeConversion && canReview && controller.changeDocumentType && (
+          <DocumentTypeControl
+            key={activeConversion.id}
+            conversion={activeConversion}
+            disabled={busy}
+            onChange={controller.changeDocumentType}
+          />
+        )}
       </div>
       <div className="workspace-body" inert={busy}>
         <ConversionNavigator
@@ -792,36 +807,46 @@ export function WorkspaceScreen({
               conversion={activeConversion}
               repository={activeRepository}
               navigation={activeNavigation}
-              review={{
-                transactions: filterTransactions(
-                  activeConversion.transactions,
-                  transactionFilter,
-                ),
-                selectedId: activeNavigation?.transactionId,
-                drawingFor,
-                paused: editingDocument === activeConversion.id,
-                onSelect: selectPdfTransaction,
-                onStartDrawing: () => {
-                  if (selectedTransaction && !selectedTransaction.isDeleted) {
-                    setMarkError(null);
-                    setEditingDocument(null);
-                    setMarking({
-                      document: activeConversion.id,
-                      transactionId: selectedTransaction.id,
-                    });
-                  }
-                },
-                onCancelDrawing: () => {
-                  setMarking(null);
-                  setMarkError(null);
-                },
-                onCreateRegion: (region) =>
-                  changeReviewRegions([
-                    ...(selectedTransaction?.reviewRegions ?? []),
-                    region,
-                  ]),
-                onClearRegions: () => changeReviewRegions([]),
-              }}
+              review={
+                activeConversion.financialDocument &&
+                ["bank_receipt", "fiscal_invoice"].includes(
+                  activeConversion.financialDocument.document_type,
+                )
+                  ? undefined
+                  : {
+                      transactions: filterTransactions(
+                        activeConversion.transactions,
+                        transactionFilter,
+                      ),
+                      selectedId: activeNavigation?.transactionId,
+                      drawingFor,
+                      paused: editingDocument === activeConversion.id,
+                      onSelect: selectPdfTransaction,
+                      onStartDrawing: () => {
+                        if (
+                          selectedTransaction &&
+                          !selectedTransaction.isDeleted
+                        ) {
+                          setMarkError(null);
+                          setEditingDocument(null);
+                          setMarking({
+                            document: activeConversion.id,
+                            transactionId: selectedTransaction.id,
+                          });
+                        }
+                      },
+                      onCancelDrawing: () => {
+                        setMarking(null);
+                        setMarkError(null);
+                      },
+                      onCreateRegion: (region) =>
+                        changeReviewRegions([
+                          ...(selectedTransaction?.reviewRegions ?? []),
+                          region,
+                        ]),
+                      onClearRegions: () => changeReviewRegions([]),
+                    }
+              }
               onReadingPosition={(position) => {
                 if (drawingFor) return;
                 const id = `${activeConversion.id}:${activeConversion.pdf?.url}`;
@@ -944,6 +969,13 @@ export function WorkspaceScreen({
                     : "Atualizar agora"}
                 </button>
               </section>
+            ) : activeConversion.financialDocument &&
+              ["bank_receipt", "fiscal_invoice"].includes(
+                activeConversion.financialDocument.document_type,
+              ) ? (
+              <DocumentEvidenceReview
+                report={activeConversion.financialDocument}
+              />
             ) : activeConversion.financialDocument ? (
               <FinancialReportReview
                 key={activeConversion.id}

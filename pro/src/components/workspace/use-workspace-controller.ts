@@ -32,6 +32,7 @@ type LoadState = "LOADING" | "READY" | "ERROR";
 type RefreshState = "IDLE" | "REFRESHING" | "ERROR";
 
 export interface WorkspaceController {
+  changeDocumentType?(documentType: string): Promise<void>;
   compareConflict(): Promise<{
     baseline: Transaction[];
     latest: Transaction[];
@@ -495,8 +496,8 @@ export function useWorkspaceController(
         field === "documentNumber"
           ? value.trim() || null
           : field === "date" || field === "description"
-          ? value
-          : parseBrazilianCurrency(value);
+            ? value
+            : parseBrazilianCurrency(value);
       const existing = previous.find(
         (transaction) => transaction.id === transactionId,
       );
@@ -707,6 +708,40 @@ export function useWorkspaceController(
     if (next) selectConversion(next.id);
   }, [activeConversion, batch, selectConversion]);
 
+  const changeDocumentType = useCallback(
+    async (documentType: string) => {
+      if (
+        !activeConversion ||
+        !repository.changeDocumentType ||
+        actionLock.current ||
+        exportPromise.current
+      )
+        throw new Error("Aguarde a operação atual antes de alterar o tipo.");
+      const id = activeConversion.id;
+      if (
+        ["DIRTY", "SAVING", "ERROR"].includes(
+          saveStatusesRef.current[id] ?? "IDLE",
+        )
+      )
+        throw new Error(
+          "Salve as edições antes de alterar o tipo do documento.",
+        );
+      actionLock.current = true;
+      setActionBusy(true);
+      try {
+        await repository.changeDocumentType(id, documentType);
+        saveStatusesRef.current[id] = "IDLE";
+        setSaveStatuses((current) => ({ ...current, [id]: "IDLE" }));
+        setHistory((current) => ({ ...current, [id]: [] }));
+        await refreshBatch();
+      } finally {
+        actionLock.current = false;
+        setActionBusy(false);
+      }
+    },
+    [activeConversion, repository, refreshBatch],
+  );
+
   const markReviewed = useCallback(async () => {
     if (
       !activeConversion ||
@@ -864,6 +899,9 @@ export function useWorkspaceController(
 
   return useMemo(
     () => ({
+      changeDocumentType: repository.changeDocumentType
+        ? changeDocumentType
+        : undefined,
       compareConflict,
       recoverConflict,
       batch,
@@ -905,6 +943,8 @@ export function useWorkspaceController(
     }),
     [
       compareConflict,
+      changeDocumentType,
+      repository,
       recoverConflict,
       activeConversion,
       addTransaction,

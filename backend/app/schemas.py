@@ -100,6 +100,7 @@ class ConvertEditPatch(BaseModel):
 
 
 class ConvertEditsRequest(BaseModel):
+    document_type: Literal['bank_statement', 'bank_receipt', 'fiscal_invoice'] | None = None
     expected_version: int | None = Field(default=None, ge=1, strict=True)
     expected_movement_versions: dict[str, int] | None = None
     operation_id: str | None = Field(default=None, min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
@@ -115,6 +116,10 @@ class ConvertEditsRequest(BaseModel):
 
 
 class ConvertEditsResponse(BaseModel):
+    document_type: str | None = None
+    document_type_automatic: str | None = None
+    document_type_history: list[dict] | None = None
+    financial_document: dict | None = None
     statement_balance_check: BalanceCheck | None = None
     operation_id: str | None = None
     processing_id: str

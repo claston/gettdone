@@ -422,4 +422,7 @@ class LegacyAnalysisState:
                 "preview_transactions", "updated_at", "opening_balance", "closing_balance",
                 "statement_balance_check",
             )},
+            **({key: content.get(key) for key in (
+                "document_type", "financial_document", "document_type_history", "document_type_automatic",
+            )} if content.get('document_type_history') else {}),
         }

@@ -166,6 +166,8 @@ def build_structured_conversion_result_from_analysis_data(
         transactions=[
             _build_structured_transaction(row=row, index=index, financial_document=analysis_data.financial_document)
             for index, row in enumerate(report_rows, start=1)
+            if not (analysis_data.financial_document is not None
+                    and analysis_data.financial_document.get('document_type') in {'bank_receipt', 'fiscal_invoice'})
         ],
         before_after=[
             _build_structured_before_after_record(item)
