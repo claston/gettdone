@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   organizationService,
   type OrganizationCatalog,
@@ -25,6 +25,15 @@ export function ClientsPage({
   const [editing, setEditing] = useState<OrganizationClient | "new" | null>(
     null,
   );
+  const formTrigger = useRef<HTMLButtonElement | null>(null);
+  const closeForm = () => {
+    setEditing(null);
+    formTrigger.current?.focus();
+  };
+  const onSaved = () => {
+    closeForm();
+    setAttempt((a) => a + 1);
+  };
   useEffect(() => {
     const abort = new AbortController();
     void service
@@ -72,21 +81,18 @@ export function ClientsPage({
             Sua carteira de clientes, documentos e movimentações financeiras.
           </p>
         </div>
-        <button className="primary-button" onClick={() => setEditing("new")}>
+        <button
+          className="primary-button"
+          onClick={(event) => {
+            formTrigger.current = event.currentTarget;
+            setEditing("new");
+          }}
+        >
           Novo cliente
         </button>
       </header>
-      {editing && (
-        <ClientForm
-          key={typeof editing === "string" ? editing : editing.id}
-          client={editing === "new" ? undefined : editing}
-          service={service}
-          onCancel={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            setAttempt((a) => a + 1);
-          }}
-        />
+      {editing === "new" && (
+        <ClientForm service={service} onCancel={closeForm} onSaved={onSaved} />
       )}
       {error ? (
         <div role="alert">
@@ -141,12 +147,26 @@ export function ClientsPage({
                   )}
                   <button
                     className="secondary-button"
-                    onClick={() => setEditing(client)}
+                    onClick={(event) => {
+                      formTrigger.current = event.currentTarget;
+                      setEditing(client);
+                    }}
                     aria-label={`Editar ${client.name}`}
+                    aria-expanded={
+                      typeof editing === "object" && editing?.id === client.id
+                    }
                   >
                     Editar
                   </button>
                 </div>
+                {typeof editing === "object" && editing?.id === client.id && (
+                  <ClientForm
+                    client={editing}
+                    service={service}
+                    onCancel={closeForm}
+                    onSaved={onSaved}
+                  />
+                )}
               </article>
             ))}
           </div>
@@ -178,9 +198,15 @@ function ClientForm({
   const [tax, setTax] = useState(client?.tax_id ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const nameInput = useRef<HTMLInputElement>(null);
+  const headingId = useId();
+  useEffect(() => {
+    nameInput.current?.focus();
+  }, []);
   return (
     <form
-      className={styles.panel}
+      className={client ? styles.inlineForm : styles.panel}
+      aria-labelledby={headingId}
       onSubmit={async (e) => {
         e.preventDefault();
         if (busy) return;
@@ -215,11 +241,12 @@ function ClientForm({
         }
       }}
     >
-      <h2>{client ? "Editar cliente" : "Novo cliente"}</h2>
+      <h2 id={headingId}>{client ? "Editar cliente" : "Novo cliente"}</h2>
       <fieldset disabled={busy} className={styles.fields}>
         <label>
           Nome do cliente
           <input
+            ref={nameInput}
             required
             maxLength={160}
             value={name}
