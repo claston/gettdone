@@ -108,4 +108,4 @@ def test_http_manual_organization_filters_permissions_and_no_processing(tmp_path
             assert access.get_remaining_quota(identity) == initial_quota
             assert publisher.calls == []
             monkeypatch.setenv("PRO_ORGANIZATION_ENABLED", "false")
-            assert client.get("/api/pro/organization/catalog").status_code == 503
+            assert client.get("/api/pro/organization/catalog").status_code == 200

@@ -30,7 +30,7 @@ pytestmark = pytest.mark.real_http
 def test_worker_import_and_manual_correction_keep_evidence_out_of_bank_exports(tmp_path, monkeypatch):
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")
     monkeypatch.setenv("PRO_ORGANIZATION_ENABLED", "true")
-    monkeypatch.setenv("PRO_OFFICE_ENABLED", "true")
+    monkeypatch.delenv("PRO_OFFICE_ENABLED", raising=False)
     texts = {
         "receipt.pdf": RECEIPT,
         "invoice.pdf": INVOICE,

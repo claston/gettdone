@@ -6,7 +6,7 @@ from app.application import AccessControlService
 from app.application.conversion.conversion_batch_service import ConversionBatchService
 from app.application.pro_organization import OrganizationService
 from app.dependencies import get_access_control_service, get_conversion_batch_service
-from app.routers.pro_organization import conversion_owner, conversion_page, organization_enabled
+from app.routers.pro_organization import conversion_owner, conversion_page
 
 router = APIRouter(prefix="/api/pro/conversions", tags=["PRO conversions"])
 
@@ -24,10 +24,9 @@ def list_files(
     account_id: str | None = Query(default=None, max_length=100),
     unassigned: bool = False,
 ) -> dict:
-    enabled = organization_enabled()
     filtered = any((client_id, period_id, account_id, unassigned))
-    if filtered and (not include_organization or not enabled):
+    if filtered and not include_organization:
         raise HTTPException(403, "Os filtros de organização não estão disponíveis.")
-    service = OrganizationService(access.db) if include_organization and enabled else None
+    service = OrganizationService(access.db) if include_organization else None
     return {**conversion_page(owner, batches, service, cursor, limit, client_id, period_id, account_id, unassigned),
-            "organization_available": enabled}
+            "organization_available": True}

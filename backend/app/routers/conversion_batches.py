@@ -231,12 +231,8 @@ def create_conversion_batch(
     )
     files = [ConversionBatchFile(**item.model_dump()) for item in request.files]
     mode_options = {}
-    from app.security_baseline import read_bool_env
-
-    if _is_pro_batch_request(http_request) and read_bool_env('PRO_OFFICE_ENABLED', default=False):
+    if _is_pro_batch_request(http_request):
         mode_options['product'] = 'pro'
-    if _is_pro_batch_request(http_request) and identity.quota_mode == 'document_conversion' and not mode_options.get('product'):
-        raise HTTPException(503, 'A importação do plano Escritório está temporariamente indisponível. Tente novamente mais tarde.')
     if request.ocr_mode == "pro":
         from app.application.conversion.pro_conversion import ConversionProAccessError, ConversionProQuota
 

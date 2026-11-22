@@ -40,8 +40,8 @@ def test_client_month_select_preview_and_download_current_package(database, tmp_
     from app.routers import canonical_pro
     from tests.test_convert_edits_http_real_api import _run_http_server
 
-    monkeypatch.setenv('PRO_OFFICE_ENABLED', 'true')
-    monkeypatch.setenv('PRO_ORGANIZATION_ENABLED', 'true')
+    monkeypatch.delenv('PRO_OFFICE_ENABLED', raising=False)
+    monkeypatch.delenv('PRO_ORGANIZATION_ENABLED', raising=False)
     repo, scope, content, _, batches, organization = database
     content['document_type'] = 'bank_statement'
     enroll(database, content)

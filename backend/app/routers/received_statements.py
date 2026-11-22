@@ -103,12 +103,9 @@ def confirm(job_id: str, request: Confirmation, owner: str = Depends(organizatio
     if record.expires_at <= datetime.now(timezone.utc):
         raise HTTPException(410, "O arquivo expirou.")
     with organization_errors():
-        from app.security_baseline import read_bool_env
-        options = {'office_audit': True} if read_bool_env('PRO_OFFICE_ENABLED', default=False) else {}
-        result = service.confirm(owner, job_id, **request.model_dump(), **options)
-        if options:
-            from app.application.office_telemetry import office_event
-            office_event(access, owner, 'office_client_identified')
+        result = service.confirm(owner, job_id, **request.model_dump(), office_audit=True)
+        from app.application.office_telemetry import office_event
+        office_event(access, owner, 'office_client_identified')
         return result
 
 

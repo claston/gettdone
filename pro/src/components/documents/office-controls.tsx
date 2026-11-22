@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import type { DocumentItem } from "@/data/documents-service";
 import {
@@ -9,21 +9,6 @@ import {
   type VerificationStatus,
 } from "@/data/office-service";
 import { AuthorizedIdentityPdf } from "../identity-document-preview";
-
-export function useOfficeEnabled() {
-  const [enabled, setEnabled] = useState(false);
-  useEffect(() => {
-    const abort = new AbortController();
-    void officeService
-      .options(abort.signal)
-      .then((value) => {
-        if (!abort.signal.aborted) setEnabled(value.enabled);
-      })
-      .catch(() => {});
-    return () => abort.abort();
-  }, []);
-  return enabled;
-}
 
 const statuses: Record<VerificationStatus, string> = {
   pending: "A conferir",

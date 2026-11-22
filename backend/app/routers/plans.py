@@ -39,9 +39,6 @@ def office_admin(action, payload, access, x_admin_token, authorization, access_c
     actor_kind, actor_user_id = require_admin_actor(access_control_service=access,
         x_admin_token=x_admin_token, authorization=authorization, access_cookie_token=access_cookie_token)
     values = payload.model_dump(mode='json', exclude={'operation_id'})
-    from app.security_baseline import read_bool_env
-    if action == 'activate' and not read_bool_env('PRO_OFFICE_ENABLED', default=False):
-        raise HTTPException(409, 'Habilite o piloto somente após validar API, processamento e migração.')
     if action == 'activate' and not values.get('expires_at'):
         raise HTTPException(400, 'Informe o fim do acesso contratado.')
     if action == 'configure' and values['max_pages_per_file_ocr'] > values['max_pages_per_file']:

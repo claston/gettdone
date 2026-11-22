@@ -132,7 +132,9 @@ def test_http_independent_listing_filtered_pages_bulk_conflicts_and_suggestions(
             assert client.get(f"/api/pro/organization/batches/{batch_id}/jobs/{job_id}/suggestions",
                               headers={"Authorization": f"Bearer {foreign.token}"}).status_code == 404
             monkeypatch.setenv("PRO_ORGANIZATION_ENABLED", "false")
-            assert client.get("/api/pro/organization/catalog").status_code == 503
+            assert client.get("/api/pro/organization/catalog").status_code == 200
+            assert client.get("/api/pro/conversions", params={"include_organization": True,
+                              "client_id": person["id"]}).status_code == 200
             # No dependency on organization storage when requesting the independent module.
             from app.routers.pro_organization import organization_service
             app.dependency_overrides[organization_service] = lambda: pytest.fail("Organization dependency called")

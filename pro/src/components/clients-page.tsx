@@ -10,7 +10,6 @@ import {
 } from "@/data/organization-service";
 import { receivedService } from "@/data/received-statements-service";
 import styles from "./documents/documents.module.css";
-import { useOfficeEnabled } from "./documents/office-controls";
 import {
   OfficeMonthFilter,
   OfficeClientCounts,
@@ -34,8 +33,7 @@ export function ClientsPage({
   const [catalog, setCatalog] = useState<OrganizationCatalog | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
-  const office = useOfficeEnabled();
-  const monthly = useOfficeMonth(office, month, attempt);
+  const monthly = useOfficeMonth(month, attempt);
   const monthlyRows = useAvailableImports(monthly?.items, documentAvailability);
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<OrganizationClient | "new" | null>(
@@ -110,10 +108,8 @@ export function ClientsPage({
       {editing === "new" && (
         <ClientForm service={service} onCancel={closeForm} onSaved={onSaved} />
       )}
-      {office && <OfficeMonthFilter month={month} />}
-      {office && !monthly && (
-        <p role="status">Consultando documentos do mês…</p>
-      )}
+      <OfficeMonthFilter month={month} />
+      {!monthly && <p role="status">Consultando documentos do mês…</p>}
       {monthly?.error && <p role="alert">{monthly.error}</p>}
       {monthly?.partial && (
         <p role="status">

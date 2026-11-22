@@ -169,7 +169,7 @@ sys.meta_path.insert(0, WorkerBoundary())
 os.environ.update(
     DATABASE_URL="postgresql://synthetic:synthetic@127.0.0.1/worker_test",
     DATABASE_SCHEMA="public", CONVERSION_S3_BUCKET="synthetic-worker-test",
-    CANONICAL_PRO_COMPLETION_ENABLED=sys.argv[1], PRO_ORGANIZATION_ENABLED="true",
+    CANONICAL_PRO_COMPLETION_ENABLED=sys.argv[1], PRO_ORGANIZATION_ENABLED="false",
     TEXTRACT_ENABLED="false", PDF_OCR_ENABLED="false", AWS_EC2_METADATA_DISABLED="true",
 )
 from app.workers import conversion_lambda as worker

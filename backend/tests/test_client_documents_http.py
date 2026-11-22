@@ -5,7 +5,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.application.access_control import AccessControlService
 from app.application.conversion.contracts.batches import ConversionFileSummary
+from app.application.conversion.contracts.jobs import ConversionJobRecord, ConversionJobResultReference
+from app.application.pro_organization import OrganizationService
 from app.dependencies import get_access_control_service, get_conversion_batch_service
 from app.main import app
 from app.routers.pro_documents import document_category, documents
@@ -107,24 +110,28 @@ def test_document_categories_use_extracted_type(kind, category):
     assert document_category({"analysis": {"document_type": kind}}) == category
 
 
-def test_document_inventory_bounded_sparse_pagination_and_expiration():
+def test_document_inventory_bounded_sparse_pagination_and_expiration(tmp_path):
+    access = AccessControlService(state_file=tmp_path / "access.json", token_secret="inventory-test")
+    owner = access.register_user(name="Owner", email="inventory@example.test", password="long-password").user_id
     now = datetime.now(timezone.utc)
     rows = [ConversionFileSummary(f"job_{index:03d}", "batch_a", "arquivo.pdf", "completed",
             now - timedelta(seconds=index), now + timedelta(hours=1)) for index in range(101)]
     calls = []
 
     def listed(**kwargs):
-        assert kwargs["identity_id"] == "owner"
+        assert kwargs["identity_id"] == owner
         return tuple(row for row in rows if kwargs["before"] is None or (row.created_at, row.job_id) < kwargs["before"])[:kwargs["limit"]]
 
     def get(job_id):
         calls.append(job_id)
-        return SimpleNamespace(job=SimpleNamespace(identity=SimpleNamespace(identity_type="user", identity_id="owner")),
-            expires_at=now + timedelta(hours=1), status="completed",
-            result=SimpleNamespace(payload={"analysis": {"document_type": "bank_receipt" if job_id == "job_100" else "unknown"},
+        return ConversionJobRecord(job=SimpleNamespace(job_id=job_id,
+            identity=SimpleNamespace(identity_type="user", identity_id=owner), document=SimpleNamespace(sha256_hex="0" * 64)),
+            expires_at=now + timedelta(hours=1), status="completed", created_at=now, updated_at=now,
+            result=ConversionJobResultReference(analysis_id="inventory", payload={"analysis": {
+                "document_type": "bank_receipt" if job_id == "job_100" else "unknown"},
                                            "private_financial_rows": "must not be returned"}))
 
-    args = dict(owner="owner", service=SimpleNamespace(contexts=lambda *_: {}),
+    args = dict(owner=owner, service=OrganizationService(access.db), report=None, async_report=None,
         batches=SimpleNamespace(repository=SimpleNamespace(list_files_for_owner=listed, get=get)),
         client_id=None, batch_id=None, unassigned=False, category="receipts", cursor=None, limit=30)
     first = documents(**args)

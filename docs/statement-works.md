@@ -100,9 +100,9 @@ conferência são detectadas na próxima consulta/exportação.
 1. Aplicar `venv\Scripts\python.exe -m alembic upgrade head` em `backend`,
    usando a configuração exclusiva do ambiente escolhido.
 2. Publicar API antes do frontend. Worker não precisa mudar.
-3. Habilitar `PRO_ORGANIZATION_ENABLED=true` e
-   `PRO_STATEMENT_WORKS_ENABLED=true` apenas para o ambiente do piloto.
-   O segundo flag é desligado por padrão em produção e habilitado em dev.
+3. Habilitar `PRO_STATEMENT_WORKS_ENABLED=true` apenas para o ambiente do piloto.
+   Esse flag é desligado por padrão em produção e habilitado em dev;
+   a organização usa a autorização do plano PRO existente.
 4. Validar proprietário, 401 sem sessão, 403 Free/sem guard de escrita, 404
    entre proprietários e 409 para versão antiga/conclusão desatualizada.
 5. Conferir cota e jobs antes/depois de vínculos/conclusão; devem ficar iguais.

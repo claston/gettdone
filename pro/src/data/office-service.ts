@@ -52,9 +52,6 @@ async function request(path: string, body?: unknown, signal?: AbortSignal) {
   return response;
 }
 export const officeService = {
-  async options(signal: AbortSignal): Promise<{ enabled: boolean }> {
-    return (await request("/options", undefined, signal)).json();
-  },
   async verify(
     job: string,
     body: {
