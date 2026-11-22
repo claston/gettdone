@@ -119,6 +119,7 @@ def run(base):
             route.fulfill(json={"available": False})
         elif path == "/api/pro/conversion-batches" and method == "POST":
             body = route.request.post_data_json
+            assert "ocr_mode" not in body, "Document import must use the standard conversion mode"
             assert len(body["files"]) == 1 and body["files"][0]["filename"] == imported["filename"]
             route.fulfill(json={"batch_id": imported["batch_id"], "uploads": [
                 {"job_id": imported["job_id"], "url": base + "/synthetic-upload", "fields": {}}]})
@@ -274,7 +275,8 @@ def run(base):
                 assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), f"{screen} mobile overflow"
                 page.screenshot(path=str(output / f"{screen}-mobile.png"), full_page=True)
             page.get_by_role("button", name="Importar documentos", exact=True).click()
-            expect(page.get_by_role("heading", name="Importar extratos e comprovantes")).to_be_visible()
+            expect(page.get_by_role("heading", name="Importar documentos", exact=True)).to_be_visible()
+            expect(page.get_by_role("radio", name="Conversão PRO")).to_have_count(0)
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Import mobile overflow"
             page.get_by_role("button", name="Abrir menu", exact=True).click()
             page.get_by_role("navigation", name="Navegação móvel").get_by_role("link", name="Conversor", exact=True).click()

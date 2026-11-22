@@ -14,6 +14,15 @@ describe("NewConversionForm", () => {
   it("mantém o cliente na importação e não reenvia o lote ao abrir os documentos", async () => {
     const service = {
       createAndSubmit: vi.fn().mockResolvedValue({ batchId: "batch_import" }),
+      getProOptions: vi.fn().mockResolvedValue({
+        enabled: true,
+        eligible: true,
+        monthly_pages: 20,
+        remaining_pages: 16,
+        max_pages: 6,
+      }),
+      preparePro: vi.fn(),
+      submitPro: vi.fn(),
     };
     render(
       <NewConversionForm
@@ -37,6 +46,107 @@ describe("NewConversionForm", () => {
     );
     await waitFor(() => expect(push).toHaveBeenCalledTimes(2));
     expect(service.createAndSubmit).toHaveBeenCalledTimes(1);
+    expect(service.getProOptions).not.toHaveBeenCalled();
+    expect(service.preparePro).not.toHaveBeenCalled();
+    expect(service.submitPro).not.toHaveBeenCalled();
+    expect(screen.queryByRole("radio")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("heading")).toHaveLength(1);
+    expect(
+      screen.getByRole("heading", { name: "Importar documentos" }),
+    ).toBeVisible();
+  });
+  it("recebe arquivos arrastados, permite remover e bloqueia alterações durante a importação", async () => {
+    let finish!: (result: { batchId: string }) => void;
+    const service = {
+      createAndSubmit: vi.fn(
+        () =>
+          new Promise<{ batchId: string }>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    };
+    render(
+      <NewConversionForm
+        service={service}
+        importContext={{ clientName: "Cliente A" }}
+        onClose={vi.fn()}
+      />,
+    );
+    const first = new File(["a"], "extrato.pdf", { type: "application/pdf" });
+    const second = new File(["b"], "comprovante.pdf", {
+      type: "application/pdf",
+    });
+    const zone = screen
+      .getByText("Arraste os arquivos para cá")
+      .closest("label")!;
+    fireEvent.drop(zone, { dataTransfer: { files: [first, second] } });
+    expect(screen.getByText("2 arquivos selecionados")).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remover comprovante.pdf" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Importar documentos" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Fechar importação" }),
+    ).toBeDisabled();
+    fireEvent.drop(zone, { dataTransfer: { files: [second] } });
+    expect(
+      screen.getByRole("button", { name: "Remover extrato.pdf" }),
+    ).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Remover comprovante.pdf" }),
+    ).not.toBeInTheDocument();
+    expect(service.createAndSubmit).toHaveBeenCalledExactlyOnceWith([first]);
+    finish({ batchId: "batch-drop" });
+    await waitFor(() =>
+      expect(push).toHaveBeenCalledWith("/documents?batch=batch-drop"),
+    );
+  });
+  it("fixa Padrão na importação mesmo se o componente tinha PRO selecionado", async () => {
+    const service = {
+      getProOptions: vi.fn().mockResolvedValue({
+        enabled: true,
+        eligible: true,
+        monthly_pages: 20,
+        remaining_pages: 16,
+        max_pages: 6,
+      }),
+      createAndSubmit: vi
+        .fn()
+        .mockResolvedValue({ batchId: "standard-import" }),
+      preparePro: vi.fn(),
+      submitPro: vi.fn(),
+    };
+    const { rerender } = render(<NewConversionForm service={service} />);
+    fireEvent.click(
+      await screen.findByRole("radio", { name: "Conversão PRO" }),
+    );
+    rerender(
+      <NewConversionForm
+        service={service}
+        importContext={{ clientId: "client_a" }}
+      />,
+    );
+    const file = new File(["a"], "extrato.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText("Selecionar arquivos"), {
+      target: { files: [file] },
+    });
+    expect(screen.queryByRole("radio")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/páginas PRO disponíveis/),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Importar documentos" }),
+    );
+    await waitFor(() =>
+      expect(push).toHaveBeenCalledWith(
+        "/documents?batch=standard-import&client=client_a",
+      ),
+    );
+    expect(service.createAndSubmit).toHaveBeenCalledExactlyOnceWith([file]);
+    expect(service.preparePro).not.toHaveBeenCalled();
+    expect(service.submitPro).not.toHaveBeenCalled();
   });
   it("retoma o vínculo do trabalho sem criar ou cobrar um segundo lote", async () => {
     const service = {

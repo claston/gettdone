@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DocumentsPage } from "./documents-page";
 import type { DocumentsService, DocumentItem } from "@/data/documents-service";
@@ -49,6 +55,51 @@ function services(items = [file]) {
 }
 
 describe("Documentos", () => {
+  it("abre um único painel de importação e mantém notas fiscais na categoria própria", async () => {
+    render(
+      <DocumentsPage
+        {...services()}
+        clientId="client_a"
+        category="statements"
+      />,
+    );
+    await screen.findByRole("link", { name: "Abrir revisão" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Importar documentos" }),
+    );
+    const panel = screen.getByRole("region", {
+      name: "Importação de documentos",
+    });
+    expect(within(panel).getAllByRole("heading")).toHaveLength(1);
+    expect(
+      within(panel).getByRole("heading", { name: "Importar documentos" }),
+    ).toBeVisible();
+    expect(
+      within(panel).getByText(/Cliente selecionado: Cliente A/),
+    ).toBeVisible();
+    expect(
+      within(panel).getByText(/confira o titular e confirme a associação/),
+    ).toBeVisible();
+    expect(
+      within(panel).queryByRole("link", { name: /nota fiscal/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Notas fiscais" })).toHaveAttribute(
+      "href",
+      "/documents?client=client_a&type=invoices",
+    );
+    expect(
+      screen.getAllByRole("button", { name: "Importar documentos" }),
+    ).toHaveLength(1);
+    fireEvent.click(
+      within(panel).getByRole("button", { name: "Fechar importação" }),
+    );
+    expect(
+      screen.queryByRole("region", { name: "Importação de documentos" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Importar documentos" }),
+    ).toBeVisible();
+  });
   it("filtra no servidor e retorna da revisão ao cliente e tipo selecionados", async () => {
     const props = services();
     render(

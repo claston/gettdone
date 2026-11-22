@@ -211,13 +211,11 @@ export function DocumentsPage({
           >
             {refreshing ? "Atualizando…" : "Atualizar documentos"}
           </button>
-          <button
-            className="primary-button"
-            onClick={() => setUpload((value) => !value)}
-            aria-expanded={upload}
-          >
-            Importar documentos
-          </button>
+          {!upload && (
+            <button className="primary-button" onClick={() => setUpload(true)}>
+              Importar documentos
+            </button>
+          )}
         </div>
       </header>
       {catalogError && (
@@ -271,34 +269,10 @@ export function DocumentsPage({
       )}
       {operationError && <p role="alert">{operationError}</p>}
       {upload && (
-        <section className={styles.panel} aria-label="Importação de documentos">
-          <h2>Qual documento deseja importar?</h2>
-          <p>
-            Envie extratos e comprovantes para consultar os dados e conferir a
-            leitura.
-          </p>
-          <div className={styles.actions}>
-            {client && (
-              <Link
-                href={`${documentsUrl(clientId, "invoices")}#notas-fiscais`}
-              >
-                Importar nota fiscal XML ou PDF
-              </Link>
-            )}
-            <button
-              className="secondary-button"
-              onClick={() => setUpload(false)}
-            >
-              Fechar importação
-            </button>
-          </div>
-          {!scoped && (
-            <p>Para notas fiscais, selecione o cliente antes de importar.</p>
-          )}
-          <NewConversionForm
-            importContext={{ clientId: client?.id, clientName: client?.name }}
-          />
-        </section>
+        <NewConversionForm
+          importContext={{ clientId: client?.id, clientName: client?.name }}
+          onClose={() => setUpload(false)}
+        />
       )}
       <nav className={styles.filters} aria-label="Tipos de documento">
         {Object.entries(documentCategories).map(([value, label]) => (
