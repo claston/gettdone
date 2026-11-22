@@ -212,7 +212,11 @@ export function DocumentsPage({
             {refreshing ? "Atualizando…" : "Atualizar documentos"}
           </button>
           {!upload && (
-            <button className="primary-button" onClick={() => setUpload(true)}>
+            <button
+              className="primary-button"
+              disabled={scoped && !client}
+              onClick={() => setUpload(true)}
+            >
               Importar documentos
             </button>
           )}
@@ -235,6 +239,7 @@ export function DocumentsPage({
             Cliente
             <select
               value={clientId}
+              disabled={upload}
               onChange={(e) =>
                 router.push(documentsUrl(e.target.value, category))
               }
@@ -253,9 +258,8 @@ export function DocumentsPage({
       {batchId && (
         <div className={styles.notice}>
           <p>
-            Arquivos deste envio. Confira o titular e a associação de cada
-            documento{client ? ` a ${client.name}` : ""}. Importar não confirma
-            conciliação.
+            Arquivos deste envio. Confira o titular e o cliente associado a cada
+            documento. Importar não confirma conciliação.
           </p>
           <Link href={documentsUrl(clientId, category)}>
             Ver todos os documentos{client ? " do cliente" : ""}

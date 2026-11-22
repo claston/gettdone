@@ -46,6 +46,9 @@ describe("NewConversionForm", () => {
     );
     await waitFor(() => expect(push).toHaveBeenCalledTimes(2));
     expect(service.createAndSubmit).toHaveBeenCalledTimes(1);
+    expect(service.createAndSubmit).toHaveBeenCalledWith(expect.any(Array), {
+      clientId: "client_a",
+    });
     expect(service.getProOptions).not.toHaveBeenCalled();
     expect(service.preparePro).not.toHaveBeenCalled();
     expect(service.submitPro).not.toHaveBeenCalled();
@@ -144,7 +147,9 @@ describe("NewConversionForm", () => {
         "/documents?batch=standard-import&client=client_a",
       ),
     );
-    expect(service.createAndSubmit).toHaveBeenCalledExactlyOnceWith([file]);
+    expect(service.createAndSubmit).toHaveBeenCalledExactlyOnceWith([file], {
+      clientId: "client_a",
+    });
     expect(service.preparePro).not.toHaveBeenCalled();
     expect(service.submitPro).not.toHaveBeenCalled();
   });

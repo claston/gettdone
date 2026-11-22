@@ -47,8 +47,13 @@ it("só confirma o arquivo após enviar os bytes e confirmar o recebimento", asy
       credentials: "omit",
     }),
   );
+  expect(request).toHaveBeenNthCalledWith(
+    1,
+    "/api/pro/financial-center/clients/c1/fiscal/imports",
+    expect.any(Object),
+  );
   expect(request).toHaveBeenLastCalledWith(
-    expect.stringContaining("/imports/i1/submit"),
+    "/api/pro/financial-center/clients/c1/fiscal/imports/i1/submit",
     expect.objectContaining({ signal: controller.signal }),
   );
 });

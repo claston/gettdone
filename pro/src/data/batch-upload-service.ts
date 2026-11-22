@@ -5,7 +5,10 @@ import {
 } from "./pro-api-client";
 
 export interface BatchUploadService {
-  createAndSubmit(files: File[]): Promise<{ batchId: string }>;
+  createAndSubmit(
+    files: File[],
+    context?: { clientId: string },
+  ): Promise<{ batchId: string }>;
   getProOptions?(): Promise<ProConversionOptions>;
   preparePro?(file: File): Promise<ProConversionEstimate>;
   submitPro?(batchId: string): Promise<{ batchId: string }>;
@@ -67,7 +70,11 @@ export function createBatchUploadService(
   const createIdempotencyKey =
     options.createIdempotencyKey ?? secureIdempotencyKey;
 
-  const uploadBatch = async (files: File[], pro = false) => {
+  const uploadBatch = async (
+    files: File[],
+    pro = false,
+    context?: { clientId: string },
+  ) => {
     if (!files.length || files.length > 12) {
       throw new Error("Selecione entre 1 e 12 arquivos.");
     }
@@ -136,6 +143,56 @@ export function createBatchUploadService(
       );
     }
 
+    if (context?.clientId) {
+      // Persist the chosen client before any bytes or processing are submitted.
+      // Expected version zero never overwrites an existing document association.
+      try {
+        const associated = await apiClient.request(
+          "/api/pro/organization/contexts/bulk",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              items: uploads.map((upload) => ({
+                batch_id: prepared.batch_id,
+                job_id: upload.job_id,
+                context: {
+                  client_id: context.clientId,
+                  account_id: null,
+                  period_ids: [],
+                  expected_version: 0,
+                },
+              })),
+            }),
+          },
+        );
+        if (!associated.ok) throw new Error("association_failed");
+        const result = (await associated.json()) as {
+          items?: Array<{
+            job_id: string;
+            status: number;
+            context?: { client_id: string | null };
+          }>;
+        };
+        if (
+          result.items?.length !== uploads.length ||
+          !uploads.every((upload) =>
+            result.items?.some(
+              (item) =>
+                item.job_id === upload.job_id &&
+                item.status === 200 &&
+                item.context?.client_id === context.clientId,
+            ),
+          )
+        )
+          throw new Error("association_incomplete");
+      } catch {
+        throw new Error(
+          "Não foi possível associar todos os arquivos ao cliente. Nenhum arquivo foi enviado. Tente novamente.",
+        );
+      }
+    }
+
     const uploadResults = await Promise.allSettled(
       files.map(async (file, index) => {
         const upload = uploads[index];
@@ -192,7 +249,7 @@ export function createBatchUploadService(
   };
 
   return {
-    createAndSubmit: (files) => uploadBatch(files),
+    createAndSubmit: (files, context) => uploadBatch(files, false, context),
     async getProOptions() {
       const response = await apiClient.request("/api/pro/conversion-options");
       if (!response.ok)
