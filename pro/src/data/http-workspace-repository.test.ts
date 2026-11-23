@@ -861,7 +861,7 @@ describe("HttpWorkspaceRepository", () => {
     expect(batch.conversions[0]).toMatchObject({
       partialStatement: true,
       status: "REVIEWED",
-      suspectedCount: 2,
+      suspectedCount: 1,
     });
   });
   it("mapeia a declaração de ausência de movimentação sem marcar falha", async () => {
@@ -1349,7 +1349,7 @@ describe("HttpWorkspaceRepository", () => {
       id: "job-ready",
       bankName: "Itaú",
       status: "NEEDS_REVIEW",
-      suspectedCount: 1,
+      suspectedCount: 0,
       transactionCount: 2,
     });
     expect(batch.conversions[0].transactions[0]).toMatchObject({

@@ -88,6 +88,7 @@ export function BalanceReviewNotice({
   );
   const controlsUnavailable = warnings.includes("ocr_controls_unavailable");
   const structureWarning = warnings.includes("ocr_structure_review_required");
+  const manualReview = warnings.includes("manual_review_recommended");
   const balanceWarning = Boolean(
     rows.length ||
     summaryWarning ||
@@ -132,6 +133,7 @@ export function BalanceReviewNotice({
     !controlWarning &&
     !controlsUnavailable &&
     !structureWarning &&
+    !manualReview &&
     !ocrBalanceMatches &&
     !conversion.statementBalanceCheck
   )
@@ -154,6 +156,20 @@ export function BalanceReviewNotice({
           <strong>{reviewGuidance.title}</strong> {reviewGuidance.message}
         </p>
       )}
+      {manualReview &&
+        !reviewGuidance &&
+        !balanceWarning &&
+        !periodWarning &&
+        !blockWarning &&
+        !controlWarning &&
+        !controlsUnavailable &&
+        !structureWarning && (
+          <p>
+            Revise os lançamentos e confira os dados no documento original antes
+            de exportar. A conversão foi concluída com recomendação de revisão
+            manual.
+          </p>
+        )}
       {ocrBalanceMatches && (
         <p>
           <strong>Saldo calculado confere com os saldos lidos.</strong>

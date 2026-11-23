@@ -43,6 +43,8 @@ This document defines the default execution rules for the `gettdone` repository.
 
 ## Financial Extraction Product Vision
 
+Free and PRO use the same conversion, financial validation, and review-warning rules. Do not introduce product-specific exceptions to these rules. A generic document review recommendation must not imply a concrete error in every transaction; retain specific warnings where there is evidence of a field-level problem.
+
 1. The product extracts financial transactions from documents, primarily bank statements but not exclusively. Supported financial reports must preserve their original financial meaning.
 2. A missing header, multiple months/periods, repeated monthly opening balances, or restarted page counters must not, by themselves, reject readable transactions. Apply this policy across readers and representations, including native PDFs and OCR.
 3. Identify independent statement blocks, extract all their movements, attempt reconciliation within each block, and combine the results while preserving dates, values, signs, legitimate repeated transactions, and references to the original pages.
