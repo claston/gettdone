@@ -3,7 +3,7 @@ from calendar import monthrange
 from datetime import datetime, timezone
 from os import getenv
 
-START = datetime(2026, 11, 25, 3, tzinfo=timezone.utc)
+START = datetime(2026, 11, 23, 3, tzinfo=timezone.utc)
 END = datetime(2026, 12, 1, 3, tzinfo=timezone.utc)
 PREPAID_CODE = "black_friday_3_meses"
 OFFERS = (
@@ -13,7 +13,7 @@ OFFERS = (
 )
 CODES = tuple(offer[0] for offer in OFFERS)
 PAID_PLAN_CODES = {"essencial", "profissional", "escritorio", "escritorio_documentos", *CODES}
-UNAVAILABLE_MESSAGE = "As ofertas Black Friday estão disponíveis de 25/11 a 30/11/2026. Confira os planos disponíveis."
+UNAVAILABLE_MESSAGE = "As ofertas Black Friday estão disponíveis de 23/11 a 30/11/2026. Confira os planos disponíveis."
 
 
 def is_available(now: datetime) -> bool:

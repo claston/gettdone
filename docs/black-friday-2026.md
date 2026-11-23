@@ -1,7 +1,7 @@
 # Black Friday 2026
 
-Contratação de **25/11/2026 às 00h00 até 30/11/2026 às 23h59**, horário de Brasília.
-O servidor usa o intervalo fechado no início e aberto no fim: `2026-11-25T03:00:00Z <= agora < 2026-12-01T03:00:00Z`.
+Contratação de **23/11/2026 às 00h00 até 30/11/2026 às 23h59**, horário de Brasília. Como a campanha começa hoje, as ofertas ficam disponíveis assim que a versão for publicada.
+O servidor usa o intervalo fechado no início e aberto no fim: `2026-11-23T03:00:00Z <= agora < 2026-12-01T03:00:00Z`.
 
 | Código | Plano | Preço | Franquia |
 | --- | --- | --- | --- |
@@ -17,7 +17,7 @@ Planos e assinaturas anteriores não são alterados. A campanha usa versões sep
 
 1. A partir de `backend`, aplicar `venv/Scripts/python.exe -m alembic upgrade head`, com o banco e schema do ambiente de destino.
 2. A migração `20261123_01` insere três linhas privadas, com conflito ignorado; não altera tabelas, colunas, planos antigos ou assinaturas. As versões antigas da API continuam exibindo somente as linhas públicas anteriores.
-3. Atualizar **todos os workers antes da API**. Os novos workers aceitam o campo opcional `quota_anchor_at` dos planos Black; pedidos dos planos existentes continuam sem esse campo quando vazio. Publicar a API e o frontend em seguida, antes de 25/11. Não iniciar vendas com workers antigos.
+3. Atualizar **todos os workers antes da API**. Os novos workers aceitam o campo opcional `quota_anchor_at` dos planos Black; pedidos dos planos existentes continuam sem esse campo quando vazio. Publicar a API e o frontend em seguida: a janela de vendas já está aberta desde 23/11. Não iniciar vendas com workers antigos.
 4. `BLACK_FRIDAY_2026_ENABLED` tem padrão `true`. Para interromper novas vendas, definir `false` na API e reiniciar suas instâncias. Essa opção não remove direitos contratados nem impede liberar pedidos já recebidos. Invalidar o cache HTTP de `/plans` se houver CDN; o máximo normal da API é 300 segundos mais 60 de revalidação. Próximo às datas de início e fim, o cache é limitado e exige revalidação.
 5. Conferir `GET /plans` antes/durante/depois da janela, os três links de checkout, os e-mails e o valor do link Pix criado pela operação. Não há criação automática de cobranças externas nesta mudança.
 

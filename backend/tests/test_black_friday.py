@@ -12,7 +12,7 @@ from app.application.purchase_flow import PurchaseFlow
 from app.dependencies import get_access_control_service
 from app.main import app
 
-START = datetime(2026, 11, 25, 3, tzinfo=timezone.utc)
+START = datetime(2026, 11, 23, 3, tzinfo=timezone.utc)
 END = datetime(2026, 12, 1, 3, tzinfo=timezone.utc)
 OFFERS = {
     "essencial_black": ("Essencial Black", 1990, 600, "monthly"),
@@ -59,7 +59,7 @@ def test_campaign_catalog_prices_boundaries_and_cache(campaign):
 def test_checkout_refuses_promotion_outside_window(campaign, code, when):
     service, clock = campaign
     clock[0] = when
-    with pytest.raises(ValueError, match="25/11.*30/11"):
+    with pytest.raises(ValueError, match="23/11.*30/11"):
         order(service, code)
 
 
@@ -87,17 +87,17 @@ def test_three_months_monthly_quota_expiration_and_no_accumulation(campaign):
     service.consume_quota(identity, consumed_units=1000)
     with pytest.raises(QuotaExceededError):
         service.ensure_quota_available(identity)
-    clock[0] = datetime(2026, 12, 25, 3, tzinfo=timezone.utc) - timedelta(microseconds=1)
+    clock[0] = datetime(2026, 12, 23, 3, tzinfo=timezone.utc) - timedelta(microseconds=1)
     assert service.get_remaining_quota(identity) == 0
     clock[0] += timedelta(microseconds=1)
     assert service.get_remaining_quota(identity) == 1000
-    assert service.get_quota_reset_at(identity) == "2027-01-25T03:00:00+00:00"
+    assert service.get_quota_reset_at(identity) == "2027-01-23T03:00:00+00:00"
     service.consume_quota(identity, consumed_units=100)
     clock[0] = datetime(2027, 1, 26, 3, tzinfo=timezone.utc)
     assert service.get_remaining_quota(identity) == 1000
-    assert service.get_quota_reset_at(identity) == "2027-02-25T03:00:00+00:00"
+    assert service.get_quota_reset_at(identity) == "2027-02-23T03:00:00+00:00"
     # Populate the active-plan cache just before expiry, then cross its boundary.
-    clock[0] = datetime(2027, 2, 25, 3, tzinfo=timezone.utc) - timedelta(microseconds=1)
+    clock[0] = datetime(2027, 2, 23, 3, tzinfo=timezone.utc) - timedelta(microseconds=1)
     assert service.resolve_identity(None, user.token).plan_code == "black_friday_3_meses"
     clock[0] += timedelta(microseconds=1)
     assert service.resolve_identity(None, user.token).plan_code is None
@@ -163,6 +163,6 @@ def test_stop_sales_preserves_existing_black_contracts(campaign, monkeypatch):
     service.list_public_plans()
     monkeypatch.setenv("BLACK_FRIDAY_2026_ENABLED", "false")
     assert not set(OFFERS).intersection(plan["code"] for plan in service.list_public_plans())
-    with pytest.raises(ValueError, match="25/11"):
+    with pytest.raises(ValueError, match="23/11"):
         order(service, "essencial_black")
     assert service.resolve_identity(None, user.token).quota_limit == 1000

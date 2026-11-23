@@ -38,7 +38,7 @@ def test_campaign_checkout_over_real_http():
                 "whatsapp": "11999990000", "accepted_terms": True,
             })
             assert refused.status_code == 400
-            assert "25/11" in refused.json()["detail"]
+            assert "23/11" in refused.json()["detail"]
             assert not set(OFFERS).intersection(item["code"] for item in client.get("/plans").json()["items"])
             clock[0] = START - timedelta(seconds=1)
             assert client.get("/plans").headers["cache-control"] == "public, max-age=0, must-revalidate"

@@ -308,7 +308,7 @@
       `<li>Tamanho máximo: ${Math.round(Number(plan.max_upload_size_bytes || 0) / (1024 * 1024))} MB por arquivo</li>`,
       "<li>Ativação manual após pagamento Pix</li>",
       commercial.terms(plan) ? `<li>${commercial.terms(plan)}</li>` : "",
-      commercial.isBlack(plan) ? "<li>Contratação de 25 a 30/11/2026, até 23h59 (Brasília). Páginas não acumulam.</li>" : "",
+      commercial.isBlack(plan) ? "<li>Contratação de 23 a 30/11/2026, até 23h59 (Brasília). Páginas não acumulam.</li>" : "",
     ].join("");
   }
 

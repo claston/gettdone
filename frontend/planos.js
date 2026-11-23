@@ -153,7 +153,7 @@
     const hero = document.querySelector(".hero");
     if (hero) {
       hero.classList.toggle("hero-black", black);
-      hero.querySelector(".kicker").textContent = black ? "Black Friday OFX Simples · 25 a 30/11/2026" : "Planos OFX Simples";
+      hero.querySelector(".kicker").textContent = black ? "Black Friday OFX Simples · 23 a 30/11/2026" : "Planos OFX Simples";
       hero.querySelector("h1").textContent = black ? "Mais páginas. Preços especiais para o seu fechamento." : "Planos simples para converter seus PDFs em OFX";
     }
     if (!plans.length) {

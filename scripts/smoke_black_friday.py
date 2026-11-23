@@ -49,7 +49,7 @@ def run():
                 page.goto("http://127.0.0.1:8000/planos.html")
                 page.get_by_role("button", name="Recusar opcionais").click()
                 expect(page.locator(".plan-card")).to_have_count(3)
-                expect(page.locator(".hero")).to_contain_text("25 a 30/11/2026")
+                expect(page.locator(".hero")).to_contain_text("23 a 30/11/2026")
                 expect(page.locator(".plan-card-prepaid .price")).to_have_text("R$ 59,90 pelos 3 meses")
                 expect(page.locator(".plan-card-featured")).to_contain_text("Profissional Black")
                 expect(page.locator(".plan-card-prepaid")).to_contain_text("1.000 páginas por mês")
