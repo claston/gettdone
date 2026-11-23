@@ -1691,9 +1691,12 @@
     const list = [];
     const metrics = analysis && typeof analysis.pdf_processing_metrics === "object" && analysis.pdf_processing_metrics
       ? analysis.pdf_processing_metrics : {};
-    const warningTypes = Array.isArray(metrics.canonical_warning_types_list) ? metrics.canonical_warning_types_list : [];
     const insights = analysis && Array.isArray(analysis.insights) ? analysis.insights : [];
     const rows = analysis && Array.isArray(analysis.preview_transactions) ? analysis.preview_transactions : [];
+    const warningTypes = [...new Set([
+      ...(Array.isArray(metrics.canonical_warning_types_list) ? metrics.canonical_warning_types_list : []),
+      ...rows.filter((row) => row && !row.is_deleted).flatMap((row) => Array.isArray(row.warning_types) ? row.warning_types : []),
+    ])];
     const manualReview = warningTypes.includes("manual_review_recommended") || rows.some((row) =>
       row && !row.is_deleted && Array.isArray(row.warning_types) && row.warning_types.includes("manual_review_recommended"));
     const reviewRecommended = Boolean(getReviewGuidance(analysis)) || String(metrics.export_recommendation || "").trim().toLowerCase() === "review_recommended" || manualReview ||
@@ -2347,9 +2350,9 @@
             : "";
         const rowDeleted = Boolean(row.is_deleted);
         const rowChanged = isRowChanged(row);
-        const warningTypes = Array.isArray(row.warning_types)
+        const warningTypes = fieldReviewWarnings(Array.isArray(row.warning_types)
           ? row.warning_types.filter((value) => String(value || "").trim().toLowerCase() !== "layout_fallback")
-          : [];
+          : []);
         const hasWarning = warningTypes.length > 0;
         const creditAmount = getCreditAmount(row);
         const debitAmount = getDebitAmount(row);
@@ -2410,6 +2413,18 @@
         `;
       })
       .join("");
+  }
+
+  // Document-level uncertainty must not imply that each field is incorrect.
+  // Parity with the PRO policy is exercised in review-warnings.test.ts.
+  function fieldReviewWarnings(warnings) {
+    const documentWarnings = new Set([
+      "manual_review_recommended", "partial_statement", "document_period_unavailable",
+      "statement_blocks_not_contiguous", "printed_summary_balance_mismatch",
+      "financial_validation_failed", "ocr_control_confidence_unconfirmed",
+      "ocr_controls_unavailable", "ocr_structure_review_required",
+    ]);
+    return warnings.filter((code) => !documentWarnings.has(code));
   }
 
   function mapWarningTypeLabel(value) {

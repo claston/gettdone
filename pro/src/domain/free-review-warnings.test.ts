@@ -37,6 +37,24 @@ function statement(metrics: Record<string, unknown> = {}) {
 }
 
 describe("free converter review findings", () => {
+  it("mostra uma recomendação geral para 42 movimentos sem inventar erros individuais", () => {
+    const warnings = collect({
+      preview_transactions: Array.from({ length: 42 }, () => ({
+        warning_types: ["manual_review_recommended"],
+      })),
+    });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("Revise os lançamentos");
+  });
+  it("preserva no documento os avisos presentes apenas nas linhas antigas", () => {
+    expect(
+      Array.from(
+        collect({
+          preview_transactions: [{ warning_types: ["partial_statement"] }],
+        }),
+      ),
+    ).toEqual(["finding:partial_statement"]);
+  });
   it("shows clean medium confidence as information without a manual review request", () => {
     const result = collect({
       ...statement(),

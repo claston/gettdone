@@ -33,6 +33,34 @@ const transaction: Transaction = {
   },
 };
 
+it("mantém um aviso geral quando só há recomendação genérica de revisão", () => {
+  const row = {
+    ...transaction,
+    balanceCheck: undefined,
+    warningTypes: ["manual_review_recommended"],
+    fieldStates: { ...transaction.fieldStates, balance: "ORIGINAL" as const },
+  };
+  render(
+    <>
+      <BalanceReviewNotice
+        conversion={
+          {
+            transactions: [row],
+            reviewWarnings: row.warningTypes,
+          } as unknown as Conversion
+        }
+      />
+      <TransactionReviewNote transaction={row} />
+    </>,
+  );
+  expect(
+    screen.getByRole("status", { name: "Conferência do documento" }),
+  ).toHaveTextContent("Revise os lançamentos");
+  expect(
+    screen.queryByText(/Confira a data, a descrição e o valor/),
+  ).not.toBeInTheDocument();
+});
+
 it("mostra o alcance da validação do documento sem afirmar erro financeiro", () => {
   render(
     <BalanceReviewNotice

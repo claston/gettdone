@@ -1,4 +1,5 @@
 export const documentReviewWarnings = new Set([
+  "manual_review_recommended",
   "partial_statement",
   "document_period_unavailable",
   "statement_blocks_not_contiguous",
@@ -10,14 +11,7 @@ export const documentReviewWarnings = new Set([
 ]);
 
 export function fieldReviewWarnings(warnings: readonly string[]): string[] {
-  const hasDocumentWarning = warnings.some((code) =>
-    documentReviewWarnings.has(code),
-  );
-  return warnings.filter(
-    (code) =>
-      !documentReviewWarnings.has(code) &&
-      !(code === "manual_review_recommended" && hasDocumentWarning),
-  );
+  return warnings.filter((code) => !documentReviewWarnings.has(code));
 }
 
 export function requiresDocumentReview(conversion: Conversion): boolean {
