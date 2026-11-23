@@ -2,6 +2,7 @@
   "use strict";
 
   const session = window.OfxSession;
+  const commercial = window.OfxPlanCommercial;
   const yearNode = document.getElementById("footer-year");
   const menuToggle = document.getElementById("menu-toggle");
   const topLinks = document.getElementById("top-links");
@@ -285,6 +286,7 @@
 
   function renderPlan(plan) {
     selectedPlan = plan || null;
+    if (submitBtn) submitBtn.disabled = !selectedPlan;
     const planName = String(plan?.name || "").trim();
     support?.update({
       enabled: true,
@@ -296,15 +298,17 @@
     if (!plan) {
       planNameNode.textContent = "Plano indisponível";
       planPriceNode.textContent = "Consulte suporte";
-      planDetailsNode.innerHTML = "<li>Tente novamente em instantes.</li>";
+      planDetailsNode.innerHTML = '<li><a href="./planos.html">Ver planos disponíveis</a></li>';
       return;
     }
     planNameNode.textContent = plan.name;
-    planPriceNode.textContent = `${formatPriceBRL(plan.price_cents)}/mês`;
+    planPriceNode.textContent = formatPriceBRL(plan.price_cents) + commercial.suffix(plan);
     planDetailsNode.innerHTML = [
-      `<li>${Number(plan.quota_limit || 0)} páginas por mês</li>`,
+      `<li>${Number(plan.quota_limit || 0).toLocaleString("pt-BR")} páginas por mês</li>`,
       `<li>Tamanho máximo: ${Math.round(Number(plan.max_upload_size_bytes || 0) / (1024 * 1024))} MB por arquivo</li>`,
       "<li>Ativação manual após pagamento Pix</li>",
+      commercial.terms(plan) ? `<li>${commercial.terms(plan)}</li>` : "",
+      commercial.isBlack(plan) ? "<li>Contratação de 25 a 30/11/2026, até 23h59 (Brasília). Páginas não acumulam.</li>" : "",
     ].join("");
   }
 
@@ -329,6 +333,11 @@
       const matched = items.find(function (item) {
         return String(item.code || "").toLowerCase() === requestedCode;
       });
+      if (requestedCode && !matched) {
+        renderPlan(null);
+        setStatus("Esta oferta não está disponível para contratação. Confira os planos disponíveis.", true);
+        return;
+      }
       renderPlan(matched || items[0]);
       setStatus("", false);
     } catch (_error) {

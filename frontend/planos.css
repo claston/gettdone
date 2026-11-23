@@ -164,6 +164,13 @@ h1 { font-size: clamp(2rem, 4.6vw, 3.6rem); letter-spacing: -0.02em; }
 .plan-support-icon { position: absolute; left: -22px; top: 0.15em; }
 .plan-support-icon-whatsapp { color: #147d43; }
 .plan-card .btn { margin-top: 18px; }
+.hero-black { background: #102649; color: #fff; }
+.hero-black h1 { color: #fff; }
+.hero-black .kicker { color: #b6d0ff; }
+.plan-card-prepaid { border-color: #147d43; }
+.badge-prepaid { background: #147d43; }
+.plan-terms { margin: 18px 0 0; color: var(--ink-soft); font-size: 0.95rem; line-height: 1.5; }
+.plan-card-prepaid .price span { display: block; margin-top: 4px; }
 
 .rules, .audience, .faq, .cta, .plans-support {
   margin-top: 24px;

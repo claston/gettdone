@@ -19,3 +19,4 @@ class IdentityContext:
     plan_name: str | None = None
     batch_conversion_enabled: bool = False
     batch_max_files: int = 1
+    quota_anchor_at: str | None = None

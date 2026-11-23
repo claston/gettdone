@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
+
+from app.application.black_friday import CODES, UNAVAILABLE_MESSAGE, is_available
+
 CHECKOUT_STATUS_REQUESTED = "REQUESTED"
 CHECKOUT_STATUS_AWAITING_PAYMENT = "AWAITING_PAYMENT"
 CHECKOUT_STATUS_RELEASED_FOR_USE = "RELEASED_FOR_USE"
@@ -39,6 +43,9 @@ def create_checkout_intent(
 
     if not normalized_code:
         raise ValueError("plan_code is required")
+    promotional = normalized_code in CODES
+    if promotional and not is_available(datetime.fromisoformat(now_iso)):
+        raise ValueError(UNAVAILABLE_MESSAGE)
     if not clean_name or not clean_email or not clean_whatsapp:
         raise ValueError("name, email, and whatsapp are required")
 
@@ -49,10 +56,11 @@ def create_checkout_intent(
         FROM user_plan_subscriptions ups
         JOIN plan_versions pv ON pv.id = ups.plan_version_id
         WHERE ups.user_id = ? AND ups.status = 'active'
+          AND (ups.ended_at IS NULL OR ups.ended_at > ?)
         ORDER BY pv.version DESC
         LIMIT 1
         """,
-        (normalized_user_id,),
+        (normalized_user_id, now_iso),
     )
     if active_plan is not None and str(active_plan["code"]).strip().lower() == normalized_code:
         raise ValueError("You already have this plan active.")
@@ -84,11 +92,11 @@ def create_checkout_intent(
         """
         SELECT code, name, price_cents, currency, billing_period
         FROM plan_versions
-        WHERE code = ? AND is_active = ? AND is_public = ?
+        WHERE code = ? AND is_active = ? AND (is_public = ? OR code IN (?, ?, ?))
         ORDER BY version DESC
         LIMIT 1
         """,
-        (normalized_code, true_value, true_value),
+        (normalized_code, true_value, true_value, *CODES),
     )
     if plan is None:
         raise ValueError("plan not found")

@@ -529,6 +529,7 @@ def test_public_plans_are_seeded_with_versions(tmp_path) -> None:
     service = AccessControlService(
         state_file=tmp_path / "state.json",
         token_secret="test-secret",
+        now_provider=lambda: datetime(2026, 11, 20, tzinfo=timezone.utc),
     )
 
     plans = service.list_public_plans()
@@ -550,6 +551,7 @@ def test_public_plans_cache_avoids_repeated_database_reads(tmp_path, monkeypatch
         state_file=tmp_path / "state.json",
         token_secret="test-secret",
         public_plans_cache_ttl_seconds=3600,
+        now_provider=lambda: datetime(2026, 11, 20, tzinfo=timezone.utc),
     )
     original_query = access_control_checkout.list_public_plans_query
     calls = 0
@@ -621,6 +623,7 @@ def test_public_plan_seed_recovers_missing_default_rows(tmp_path) -> None:
     restored_service = AccessControlService(
         state_file=tmp_path / "state.json",
         token_secret="test-secret",
+        now_provider=lambda: datetime(2026, 11, 20, tzinfo=timezone.utc),
     )
     plans = restored_service.list_public_plans()
     codes = {str(item["code"]) for item in plans}

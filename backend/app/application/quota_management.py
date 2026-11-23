@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Protocol
 
+from app.application.black_friday import monthly_window
 from app.application.errors import QuotaExceededError
 
 
@@ -51,6 +52,8 @@ def read_usage_snapshot(
     is_quota_window_expired,
 ) -> UsageSnapshot:
     now = now_provider()
+    anchor_raw = getattr(identity, "quota_anchor_at", None)
+    calendar_start = monthly_window(datetime.fromisoformat(anchor_raw), now)[0] if anchor_raw else None
     row = fetchone(
         conn,
         """
@@ -61,7 +64,7 @@ def read_usage_snapshot(
         (identity.identity_type, identity.identity_id),
     )
     if row is None:
-        started_at = now.isoformat()
+        started_at = (calendar_start or now).isoformat()
         execute(
             conn,
             """
@@ -84,7 +87,7 @@ def read_usage_snapshot(
                 started_at,
             ),
         )
-        return UsageSnapshot(used_count=0, window_started_at=now)
+        return UsageSnapshot(used_count=0, window_started_at=calendar_start or now)
 
     used_count = int(row["used_count"] or 0)
     window_started_at = parse_usage_datetime(
@@ -92,8 +95,10 @@ def read_usage_snapshot(
         fallback=now,
     )
 
-    if is_quota_window_expired(window_started_at, now, quota_window_days=identity.quota_window_days):
-        window_started_at = now
+    expired = (window_started_at < calendar_start if calendar_start else
+               is_quota_window_expired(window_started_at, now, quota_window_days=identity.quota_window_days))
+    if expired:
+        window_started_at = calendar_start or now
         used_count = 0
         started_at = window_started_at.isoformat()
         execute(

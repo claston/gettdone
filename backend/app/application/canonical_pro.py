@@ -5,6 +5,7 @@ from time import monotonic
 
 from psycopg.types.json import Jsonb
 
+from app.application.black_friday import PAID_PLAN_CODES
 from app.application.canonical_artifacts import CanonicalArtifactService
 from app.application.canonical_identity import receive_in_transaction
 from app.application.canonical_movements import CanonicalRollout, MovementScope
@@ -14,7 +15,7 @@ from app.application.errors import AnalysisAccessDeniedError, AnalysisEditConfli
 from app.application.parsers.pdf.layout_specific.wise import WISE_CURRENCIES
 
 logger = logging.getLogger(__name__)
-PAID_PLANS = {"essencial", "profissional", "escritorio", "escritorio_documentos"}
+PAID_PLANS = PAID_PLAN_CODES
 
 
 class CanonicalProService:
@@ -27,8 +28,9 @@ class CanonicalProService:
         plan = conn.execute(f'''SELECT 1 FROM {repo.p}user_plan_subscriptions s
             JOIN {repo.p}plan_versions p ON p.id = s.plan_version_id
             WHERE s.user_id=%s AND s.status='active' AND p.batch_conversion_enabled
-                AND p.code IN ('essencial','profissional','escritorio','escritorio_documentos')
-                        AND (p.code <> 'escritorio_documentos' OR s.ended_at::timestamptz > CURRENT_TIMESTAMP)''', (actor_id,)).fetchone()
+                AND p.code = ANY(%s)
+                AND (s.ended_at IS NULL OR s.ended_at::timestamptz > CURRENT_TIMESTAMP)
+                AND (p.code <> 'escritorio_documentos' OR s.ended_at IS NOT NULL)''', (actor_id, sorted(PAID_PLANS))).fetchone()
         if not plan:
             raise AnalysisAccessDeniedError
 

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.application import AccessControlService, InvalidUserTokenError
+from app.application.black_friday import catalog_cache_seconds
 from app.application.office_plan import office_commercial
 from app.dependencies import get_access_control_service
 from app.routers.access_control_common import SESSION_ACCESS_COOKIE_NAME, require_admin_actor
@@ -81,7 +82,11 @@ def list_plans(
 ) -> PlanCatalogResponse:
     items = access_control_service.list_public_plans()
     max_age = min(86400, max(0, access_control_service.public_plans_cache_ttl_seconds))
-    response.headers["Cache-Control"] = f"public, max-age={max_age}, stale-while-revalidate=60"
+    bounded = catalog_cache_seconds(access_control_service.now_provider(), max_age + 60)
+    response.headers["Cache-Control"] = (
+        f"public, max-age={min(max_age, bounded)}, must-revalidate" if bounded < max_age + 60
+        else f"public, max-age={max_age}, stale-while-revalidate=60"
+    )
     return PlanCatalogResponse(items=[PlanCatalogItem(**item) for item in items])
 
 @router.post("/admin/plans/activate", response_model=AdminActivatePlanResponse)

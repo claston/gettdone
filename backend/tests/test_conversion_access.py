@@ -138,12 +138,15 @@ def test_worker_rechecks_current_subscription_with_shared_plan_query(active, mon
         "max_pages_per_file_ocr": 6,
         "batch_conversion_enabled": True,
         "batch_max_files": 12,
+        "started_at": "2026-11-01T00:00:00+00:00",
+        "ended_at": None,
     }
 
     def fetchone(conn, query, params):
         assert "JOIN plan_versions" in query and "ups.status = 'active'" in query
         assert params[0] == "usr_paid" and len(params) == 2
-        assert "pv.code <> 'escritorio_documentos' OR ups.ended_at > ?" in query
+        assert "ups.ended_at IS NULL OR ups.ended_at > ?" in query
+        assert "pv.code <> 'escritorio_documentos' OR ups.ended_at IS NOT NULL" in query
         assert datetime.fromisoformat(params[1]).tzinfo is not None
         return row if active else None
 

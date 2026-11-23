@@ -6,6 +6,7 @@
   const menuToggle = document.getElementById("menu-toggle");
   const topLinks = document.getElementById("top-links");
   const session = window.OfxSession;
+  const commercial = window.OfxPlanCommercial;
   const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
   const COLD_START_TIMEOUT_MS = 5000;
 
@@ -147,6 +148,14 @@
   function renderPlans(items) {
     if (!pricingGrid) return;
     const plans = Array.isArray(items) ? items.slice() : [];
+    const black = plans.some(function (plan) { return commercial.isBlack(plan); });
+    document.getElementById("black-friday-terms")?.classList.toggle("hidden", !black);
+    const hero = document.querySelector(".hero");
+    if (hero) {
+      hero.classList.toggle("hero-black", black);
+      hero.querySelector(".kicker").textContent = black ? "Black Friday OFX Simples · 25 a 30/11/2026" : "Planos OFX Simples";
+      hero.querySelector("h1").textContent = black ? "Mais páginas. Preços especiais para o seu fechamento." : "Planos simples para converter seus PDFs em OFX";
+    }
     if (!plans.length) {
       pricingGrid.innerHTML = [
         '<article class="plan-card">',
@@ -162,24 +171,27 @@
     plans.sort(function (a, b) {
       return Number(a.price_cents || 0) - Number(b.price_cents || 0);
     });
-    const featuredCode = "profissional";
+    const featuredCode = black ? "profissional_black" : "profissional";
 
     pricingGrid.innerHTML = plans
       .map(function (plan) {
         const code = String(plan.code || "").toLowerCase();
+        const prepaid = plan.billing_period === "prepaid_quarter";
         const isFeatured = code === featuredCode;
-        const cardClass = isFeatured ? "plan-card plan-card-featured" : "plan-card";
+        const cardClass = (isFeatured ? "plan-card plan-card-featured" : "plan-card") + (prepaid ? " plan-card-prepaid" : "");
         const ctaClass = isFeatured ? "btn btn-primary" : "btn btn-outline";
         return [
           `<article class="${cardClass}">`,
           isFeatured ? '<p class="badge">Mais escolhido</p>' : "",
+          prepaid ? '<p class="badge badge-prepaid">Pagamento único</p>' : "",
           `<h2>${String(plan.name || "")}</h2>`,
-          `<p class="price">${formatPriceBRL(plan.price_cents)}<span>/mês</span></p>`,
+          `<p class="price">${formatPriceBRL(plan.price_cents)}<span>${commercial.suffix(plan)}</span></p>`,
           "<ul>",
-          `<li>${Number(plan.quota_limit || 0)} páginas por mês</li>`,
+          `<li>${Number(plan.quota_limit || 0).toLocaleString("pt-BR")} páginas por mês${prepaid ? ", durante 3 meses" : ""}</li>`,
           `<li>Tamanho máximo: ${Math.round(Number(plan.max_upload_size_bytes || 0) / (1024 * 1024))} MB por arquivo</li>`,
           renderSupportBenefit(plan),
           "</ul>",
+          commercial.terms(plan) ? `<p class="plan-terms">${commercial.terms(plan)}</p>` : "",
           `<a class="${ctaClass}" data-product-event="plan_cta_click" data-plan-code="${code}" href="./checkout.html?plan=${encodeURIComponent(code)}">Quero este plano</a>`,
           "</article>",
         ].join("");

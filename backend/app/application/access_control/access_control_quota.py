@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
+from app.application.black_friday import monthly_window
 from app.application.errors import FileTooLargeError
 from app.application.quota_management import (
     compute_quota_reset_at,
@@ -160,6 +162,8 @@ class AccessControlQuotaComponent:
 
     def get_quota_reset_at(self, identity: IdentityContext) -> str:
         usage = self._service._read_usage(identity)
+        if identity.quota_anchor_at:
+            return monthly_window(datetime.fromisoformat(identity.quota_anchor_at), self._service.now_provider())[1].isoformat()
         return compute_quota_reset_at(
             window_started_at=usage["window_started_at"],
             quota_window_days=identity.quota_window_days,
