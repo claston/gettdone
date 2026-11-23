@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.application.office_documents import OfficeReviews, matches_month
 from app.dependencies import get_async_conversion_report_service, get_conversion_batch_service, get_report_service
-from app.routers.office_documents import current_record, describe, office_enabled
+from app.routers.office_documents import current_record, describe
 from app.routers.pro_organization import decode_cursor, organization_owner, organization_service, owned_snapshot
 
 router = APIRouter(prefix="/api/pro/documents", tags=["PRO documents"])
@@ -43,7 +43,6 @@ def documents(
     report=Depends(get_report_service),
     async_report=Depends(get_async_conversion_report_service),
 ):
-    enabled = office_enabled()
     if month:
         try:
             matches_month({}, month)
@@ -77,9 +76,8 @@ def documents(
     # filtered page can have a continuation; clients must expose that explicitly.
     rows = batches.repository.list_files_for_owner(identity_type="user", identity_id=owner, limit=100, before=before, active_only=True)
     contexts = service.contexts(owner, [row.job_id for row in rows])
-    reviews = OfficeReviews(service.db) if enabled else None
-    if reviews:
-        reviews.prefetch(owner, [row.job_id for row in rows])
+    reviews = OfficeReviews(service.db)
+    reviews.prefetch(owner, [row.job_id for row in rows])
     for index, row in enumerate(rows):
         context = contexts.get(row.job_id, {"client_id": None, "account_id": None, "period_ids": [], "version": 0})
         matches = ((not batch_id or row.batch_id == batch_id)
@@ -101,13 +99,12 @@ def documents(
                     expired = expires_at <= now or status == "expired"
                     available = not expired
                     if available:
-                        if enabled:
-                            record = current_record(record, owner, (async_report, report))
-                            expires_at = min(expires_at, record.expires_at)
-                            expired = record.expires_at <= now or str(getattr(record.status, 'value', record.status)) == 'expired'
-                            available = not expired
+                        record = current_record(record, owner, (async_report, report))
+                        expires_at = min(expires_at, record.expires_at)
+                        expired = record.expires_at <= now or str(getattr(record.status, 'value', record.status)) == 'expired'
+                        available = not expired
                         payload = (record.result.payload or {}) if record.result else {}
-                        if enabled and available:
+                        if available:
                             office = describe(record, contexts.get(row.job_id, {}), reviews, owner)
                             office.pop('analysis')
                 else:

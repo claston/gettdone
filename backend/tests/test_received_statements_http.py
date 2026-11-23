@@ -210,7 +210,7 @@ def test_receipts_real_http_multi_batch_workspace_export_permissions_and_expiry(
             empty_search = client.post("/api/pro/receipts/search", json={"query": "Padaria", "active_only": True}).json()
             assert empty_search["clients"] == [] and empty_search["all_client_count"] == 1
             monkeypatch.setenv("PRO_ORGANIZATION_ENABLED", "false")
-            assert client.get("/api/pro/receipts").status_code == 503
+            assert client.get("/api/pro/receipts").status_code == 200
             assert client.get("/api/pro/conversions").status_code == 200
             assert publisher.calls == [] and access.get_remaining_quota(identity) == remaining
 

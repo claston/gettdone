@@ -1,6 +1,6 @@
-# Escritório V1 — OFX-79 / OFX-80
+# Fluxo de documentos do PRO — OFX-79 / OFX-80
 
-Implementação do recorte pago, reaproveitando a OFX-59 (PR #628), o upload assíncrono, Clientes, o revisor e os exportadores existentes. Não substitui o conversor Free nem implementa a Central Financeira, conciliação contábil, portal de clientes ou captura fiscal.
+Implementação no PRO existente, reaproveitando a OFX-59 (PR #628), o upload assíncrono, Clientes, o revisor e os exportadores existentes. Recebimento, organização, conferência e pacote usam a mesma autorização do plano PRO, sem flags de acesso para Escritório ou organização. Não substitui o conversor Free nem implementa a Central Financeira, conciliação contábil, portal de clientes ou captura fiscal.
 
 ## Cobrança decidida pelo produto
 
@@ -43,7 +43,7 @@ As rotas abaixo usam **sessão administrativa existente**, nunca token em URL. N
 
 1. `POST /admin/plans/office/configure` com `operation_id` único e `version`. `price_cents` e `quota_limit` podem ser omitidos para cadastrar um rascunho inativo. Os limites configuráveis são `max_pages_per_file` (até 100), `max_pages_per_file_ocr` (até o limite de páginas) e `batch_max_files` (até 30). O runtime e a política de OCR podem impor limites menores.
 2. Após preço/cota aprovados, cadastrar **nova versão** com esses valores. Não editar versões de contratos vigentes. O cadastro permanece privado; a página `/escritorio` descreve o piloto assistido sem publicar preço inventado.
-3. Confirmar pagamento pelo provedor aprovado no processo comercial existente, sem guardar cartão na aplicação. Usar `POST /admin/plans/office/activate` com `operation_id`, `user_id`, `expires_at` futuro. A API exige `PRO_OFFICE_ENABLED=true`. O cadastro genérico de planos recusa ativar este plano sem término.
+3. Confirmar pagamento pelo provedor aprovado no processo comercial existente, sem guardar cartão na aplicação. Usar `POST /admin/plans/office/activate` com `operation_id`, `user_id`, `expires_at` futuro. O cadastro genérico de planos recusa ativar este plano sem término.
 4. Renovação assistida usa nova operação de ativação após confirmação comercial. A repetição da mesma operação não reinicia a cota. Cancelamento usa `POST /admin/plans/office/cancel` com `operation_id` e `user_id`. Expiração/cancelamento removem os entitlements; não prolongam a retenção de documentos.
 
 Configuração, ativação e cancelamento ficam em `office_commercial_events`, sem conteúdo financeiro dos documentos. Nenhuma assinatura real, preço, pagamento ou configuração de produção foi alterado por esta implementação.
@@ -52,14 +52,16 @@ Configuração, ativação e cancelamento ficam em `office_commercial_events`, s
 
 `20261122_01` é aditiva: coluna `conversion_jobs.product` com padrão `free`, tabelas de conferência/eventos/vínculos e eventos comerciais. Não faz backfill financeiro, não remove tabelas/colunas e não reescreve movimentos. A coluna usa valor padrão constante; o ALTER requer um bloqueio breve. Índices novos são sobre tabelas novas. Prever janela sem trabalhos de migração concorrentes e monitorar tempo de bloqueio.
 
-1. Manter `PRO_OFFICE_ENABLED=false` (padrão). Aplicar a migração.
-2. Implantar a mesma revisão na API e em todos os workers. Processos antigos não reconhecem o produto do trabalho e não podem receber novos trabalhos Escritório.
+1. Aplicar a migração antes de publicar a versão PRO que usa essas tabelas.
+2. Implantar a mesma revisão na API e em todos os workers antes de admitir novos envios PRO. Processos anteriores ao marcador de produto não podem processar esses trabalhos.
 3. Validar o caminho assíncrono existente, autorização, armazenamento e exportador na coorte. Manter a fonte canônica quando adotada; nunca restaurar escrita legada de uma análise canônica.
 4. Agendar/manter `app.workers.canonical_cleanup`: também remove conferências, eventos documentais e vínculos manuais no prazo original. O scheduler deve executar mesmo se a admissão de novos documentos estiver desligada.
-5. Habilitar a organização existente e o piloto somente após smoke de preview com arquivos sintéticos. Não mudar o TTL existente (86400 s quando usado o padrão). A data real de expiração aparece em cada documento.
+5. Validar acesso com o plano PRO existente e smoke de preview com arquivos sintéticos. Não há variável adicional de liberação. Não mudar o TTL existente (86400 s quando usado o padrão). A data real de expiração aparece em cada documento.
 6. Aprovar preço, cota, retenção divulgada e pagamento, ativar os pilotos e acompanhar a primeira entrega. Teste local não substitui a validação de usabilidade por escritório real.
 
-Rollback: desligar a admissão com `PRO_OFFICE_ENABLED=false`, concluir/drenar os trabalhos PRO em curso e só então retornar os binários. A migração de downgrade preserva os objetos aditivos e o marcador de produto, para não converter trabalho pago pelo caminho Free. Reaplicar upgrade é idempotente. Conferências e documentos continuam sujeitos ao expurgo e à autorização; não apagar evidências para reabilitar um escritor antigo.
+Rollback: interromper a admissão de novos envios PRO no controle operacional de tráfego, concluir/drenar os trabalhos PRO em curso e só então retornar os binários. A migração de downgrade preserva os objetos aditivos e o marcador de produto, para não converter trabalho pago pelo caminho Free. Reaplicar upgrade é idempotente. Conferências e documentos continuam sujeitos ao expurgo e à autorização; não apagar evidências para reabilitar um escritor antigo.
+
+`PRO_OFFICE_ENABLED` e `PRO_ORGANIZATION_ENABLED` foram removidas e valores antigos são ignorados. `/api/pro/documents/options` mantém resposta habilitada para frontends já carregados; a interface atual não consulta esse endpoint. O worker registra recebimentos de trabalhos PRO automaticamente, preservando o Free. Preço/cota continuam configuráveis no cadastro privado e não funcionam como liberação separada das telas.
 
 As tabelas de metadados preservados não possuem chaves estrangeiras que impeçam rollback profundo da organização ou apaguem a auditoria em cascata. Todas as operações resolvem a organização do proprietário autenticado antes de consultar ou gravar. Registros sem organização ativa permanecem inacessíveis e são expurgados no prazo original. O teste de rollback existente até `20261012_01` também é executado.
 
@@ -78,6 +80,12 @@ Antes de lançar: conferir primeiro lote misto → organização → revisão �
 - HTTP real: lote com extrato/nota/comprovante, conferência e correção de tipo, downloads, pacote, edição invalidando prévia, usuário alheio, expiração sem metadados no manifesto, limites de tamanho/quantidade; OFX/CSV/XLSX com cota esgotada sem novos débitos; cadastro e ativação administrativa autenticados. O endpoint `/analyze` está aposentado (405); o caminho vigente é `/convert`/lote, com `GET /report/{id}` e negativos exercitados.
 
 Essas evidências usam arquivos sintéticos e serviços locais; não atestam deploy AWS, configuração de produção nem aceitação por um escritório cliente.
+
+## Simplificação do acesso PRO — 22/11/2026
+
+Após o merge de #629, a orientação de produto unificou o fluxo no PRO existente. Foram removidas as duas flags de acesso e a consulta de opções da interface. O plano configurável por conversões permanece privado, sem preço/cota inventados; planos existentes não são reescritos. O worker registra apenas novos trabalhos marcados como PRO; a importação pelo Free permanece no caminho existente.
+
+Validação da correção contra `main` `e41a4c4`: backend completo **5629 passed, 150 skipped, 2 xfailed** (604,44 s, seleção completa do runner); frontend **478 passed**; HTTP real e worker **45 passed**; conversão Free **90 casos sem diferenças** e revisão Free **170 sem diferenças**, sem aprovações de exceções. Integrações PostgreSQL/navegador dependentes de ambiente estão entre os skips locais e possuem job próprio no CI. Build, Ruff, ESLint, TypeScript, texto UTF-8 e navegação passaram. Os três cenários de navegador da suíte workspace passaram, incluindo Clientes/Documentos, importação e exportação em desktop e celular, sem consultar uma liberação adicional.
 
 <a id="atualizacao-da-base-apos-o-merge-da-ofx-59"></a>
 

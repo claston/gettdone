@@ -3,6 +3,8 @@ import json
 import logging
 from datetime import datetime, timezone
 
+import pytest
+
 from app.application.access_control import IdentityContext
 from app.application.conversion.conversion_batch import ConversionBatch, ConversionBatchStatus
 from app.application.conversion.conversion_batch_repository import InMemoryConversionBatchRepository
@@ -43,7 +45,7 @@ class TimeoutPipeline:
 
 
 def test_receipt_failure_retries_only_indexing_of_a_completed_job():
-    repository, job = _queued_repository()
+    repository, job = _queued_repository(product="pro")
     pipeline = SuccessfulPipeline()
     calls = []
 
@@ -60,12 +62,24 @@ def test_receipt_failure_retries_only_indexing_of_a_completed_job():
     assert second["batchItemFailures"] == [] and len(calls) == 2 and pipeline.calls == 1
 
 
+@pytest.mark.parametrize("product", ["free", "pro"])
+def test_worker_indexes_only_pro_uploads(product):
+    repository, job = _queued_repository(product=product)
+    indexed = []
+    processor = ConversionLambdaProcessor(repository=repository, document_store=FakeDocumentStore(),
+        pipeline=SuccessfulPipeline(), receipt_recorder=lambda record: indexed.append(record.job.job_id))
+    result = handle_sqs_event(_event(job.job_id), processor=processor, request_id="product-index")
+    assert result["batchItemFailures"] == []
+    assert repository.get(job.job_id).status == ConversionJobStatus.COMPLETED
+    assert indexed == ([job.job_id] if product == "pro" else [])
+
+
 class InvalidPipeline:
     def run_job(self, **_kwargs):
         raise ValueError("invalid document")
 
 
-def _queued_repository() -> tuple[InMemoryConversionBatchRepository, ConversionJob]:
+def _queued_repository(*, product="free") -> tuple[InMemoryConversionBatchRepository, ConversionJob]:
     repository = InMemoryConversionBatchRepository()
     batch = ConversionBatch(
         batch_id="batch_worker",
@@ -88,6 +102,7 @@ def _queued_repository() -> tuple[InMemoryConversionBatchRepository, ConversionJ
             sha256_hex="a" * 64,
         ),
         identity=IdentityContext(identity_type="user", identity_id="usr_123", quota_limit=20),
+        product=product,
     )
     repository.create(batch=batch, jobs=[job])
     repository.mark_uploaded(job.job_id)

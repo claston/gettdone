@@ -66,8 +66,9 @@ def run(base):
             selected = [item for item in selected if item["context"]["client_id"] is None]
         elif query.get("client_id"):
             selected = [item for item in selected if item["context"]["client_id"] == query["client_id"][0]]
-        if query["category"] != ["all"]:
-            selected = [item for item in selected if item["category"] == query["category"][0]]
+        category = query.get("category", ["all"])[0]
+        if category != "all":
+            selected = [item for item in selected if item["category"] == category]
         return {"items": selected, "next_cursor": None}
 
     def intercept(route):
@@ -92,13 +93,12 @@ def run(base):
             assert body["expected_updated_at"] == clients[0]["updated_at"]
             clients[0].update(name=body["name"], updated_at="v2")
             route.fulfill(json={"id": "client_browser"})
-        elif path == "/api/pro/documents/options" and method == "GET":
-            route.fulfill(json={"enabled": False, "max_package_files": 30, "max_package_bytes": 64 * 1024 * 1024})
         elif path == "/api/pro/documents":
-            if loading["documents"]:
+            query = parse_qs(url.query)
+            if loading["documents"] and "category" in query:
                 held_documents.append(route)
                 return
-            route.fulfill(json=document_page(parse_qs(url.query)))
+            route.fulfill(json=document_page(query))
         elif path.endswith("/fiscal"):
             assert path == "/api/pro/financial-center/clients/client_browser/fiscal"
             route.fulfill(json=fiscal)
@@ -166,7 +166,8 @@ def run(base):
         try:
             page.goto(base + "/dashboard")
             expect(page.get_by_role("heading", name="Clientes", exact=True)).to_be_visible()
-            expect(page.get_by_role("status")).to_have_text("Carregando clientes…")
+            expect(page.get_by_role("status").filter(has_text="Carregando clientes…")).to_be_visible()
+            expect(page.get_by_label("Mês de trabalho")).to_be_visible()
             loading["catalog"] = False
             assert len(held_catalogs) == 1
             held_catalogs.pop().fulfill(json=catalog)

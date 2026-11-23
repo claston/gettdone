@@ -145,7 +145,7 @@ estados manualmente nem solicitar um novo upload como recuperação padrão.
    adicional; o prazo do objeto não substitui o bloqueio na API.
 4. Habilitar `PRO_FISCAL_ENABLED`, `PRO_TAX_ENABLED`, `PRO_REVENUE_ENABLED` conforme
    o piloto. `PRO_FISCAL_ENABLED` precisa coincidir em API e worker. A Central
-   depende também de `PRO_FINANCIAL_CENTER_ENABLED` e `PRO_ORGANIZATION_ENABLED`.
+   depende também de `PRO_FINANCIAL_CENTER_ENABLED` e de acesso PRO ativo.
 5. `PRO_FISCAL_OCR_ENABLED` é opcional, desligada por padrão. Requer Textract
    configurado e orçamento aprovado; não usa a quota do conversor Free. PDFs
    digitalizados sem OCR são rejeitados com orientação de enviar XML.

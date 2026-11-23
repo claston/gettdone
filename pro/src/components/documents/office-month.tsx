@@ -4,11 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { documentsService, type DocumentItem } from "@/data/documents-service";
 
-export function useOfficeMonth(
-  enabled: boolean,
-  month: string,
-  attempt: number,
-) {
+export function useOfficeMonth(month: string, attempt: number) {
   const [state, setState] = useState<{
     month: string;
     items: DocumentItem[];
@@ -16,7 +12,6 @@ export function useOfficeMonth(
     error?: string;
   } | null>(null);
   useEffect(() => {
-    if (!enabled) return;
     const abort = new AbortController();
     void (async () => {
       const items = new Map<string, DocumentItem>();
@@ -54,7 +49,7 @@ export function useOfficeMonth(
       }
     })();
     return () => abort.abort();
-  }, [enabled, month, attempt]);
+  }, [month, attempt]);
   return state?.month === month ? state : null;
 }
 

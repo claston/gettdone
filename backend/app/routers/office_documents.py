@@ -23,25 +23,15 @@ from app.dependencies import (
 from app.routers.canonical_pro import canonical_display_record, export_canonical_record, validate_export_checks
 from app.routers.pro_organization import organization_errors, organization_owner, organization_service
 from app.routers.pro_security import require_pro_browser_request
-from app.security_baseline import read_bool_env
 
 router = APIRouter(prefix='/api/pro/documents', tags=['Office delivery'])
 MAX_PACKAGE_BYTES = 64 * 1024 * 1024
 
 
-def office_enabled():
-    return read_bool_env('PRO_OFFICE_ENABLED', default=False)
-
-
-def office_owner(owner=Depends(organization_owner)):
-    if not office_enabled():
-        raise HTTPException(503, 'A entrega por cliente ainda não está disponível. Use os downloads individuais.')
-    return owner
-
-
 @router.get('/options')
 def options(owner=Depends(organization_owner)):
-    return {'enabled': office_enabled(), 'max_package_files': 30, 'max_package_bytes': MAX_PACKAGE_BYTES}
+    # Preserve the response for already loaded clients; access is the existing PRO entitlement.
+    return {'enabled': True, 'max_package_files': 30, 'max_package_bytes': MAX_PACKAGE_BYTES}
 
 
 def owned_record(batches, owner, job_id, *, allow_expired=False):
@@ -121,7 +111,7 @@ class Verification(BaseModel):
 
 
 @router.post('/{job_id}/verification', dependencies=[Depends(require_pro_browser_request)])
-def verify(job_id: str, request: Verification, owner=Depends(office_owner), service=Depends(organization_service),
+def verify(job_id: str, request: Verification, owner=Depends(organization_owner), service=Depends(organization_service),
            batches=Depends(get_conversion_batch_service), report=Depends(get_report_service),
            async_report=Depends(get_async_conversion_report_service), access=Depends(get_access_control_service)):
     record = current_record(owned_record(batches, owner, job_id), owner, (async_report, report))
@@ -166,7 +156,7 @@ def part_bytes(raw, part):
 
 
 @router.get('/{job_id}/parts/{part_id}')
-def download_part(job_id: str, part_id: str, owner=Depends(office_owner), batches=Depends(get_conversion_batch_service),
+def download_part(job_id: str, part_id: str, owner=Depends(organization_owner), batches=Depends(get_conversion_batch_service),
                   store=Depends(get_conversion_batch_document_store)):
     record = current_record(owned_record(batches, owner, job_id), owner)
     analysis = (record.result.payload or {}).get('analysis') or {} if record.result else {}
@@ -263,7 +253,7 @@ def package_snapshot(request, owner, service, batches, reports):
 
 
 @router.post('/package/preview', dependencies=[Depends(require_pro_browser_request)])
-def preview_package(request: PackageRequest, owner=Depends(office_owner), service=Depends(organization_service),
+def preview_package(request: PackageRequest, owner=Depends(organization_owner), service=Depends(organization_service),
                     batches=Depends(get_conversion_batch_service), report=Depends(get_report_service),
                     async_report=Depends(get_async_conversion_report_service)):
     return package_snapshot(request, owner, service, batches, (async_report, report))[0]
@@ -275,7 +265,7 @@ def safe_name(value):
 
 
 @router.post('/package/download', dependencies=[Depends(require_pro_browser_request)])
-def download_package(request: PackageRequest, owner=Depends(office_owner), service=Depends(organization_service),
+def download_package(request: PackageRequest, owner=Depends(organization_owner), service=Depends(organization_service),
                      batches=Depends(get_conversion_batch_service), store=Depends(get_conversion_batch_document_store),
                      report=Depends(get_report_service), async_report=Depends(get_async_conversion_report_service),
                      access=Depends(get_access_control_service)):

@@ -1,11 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import {
-  OfficeDocumentControls,
-  OfficePackage,
-  useOfficeEnabled,
-} from "./office-controls";
+import { OfficeDocumentControls, OfficePackage } from "./office-controls";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
@@ -54,7 +50,6 @@ export function DocumentsPage({
   financialCenterVisible?: boolean;
 }) {
   const router = useRouter();
-  const office = useOfficeEnabled();
   const [selected, setSelected] = useState<string[]>([]);
   const [catalog, setCatalog] = useState<OrganizationCatalog | null>(null);
   const [catalogError, setCatalogError] = useState("");
@@ -265,71 +260,63 @@ export function DocumentsPage({
           </label>
         </div>
       )}
-      {office && (
-        <div className={styles.fields}>
-          {scoped && (
-            <label>
-              Conta{" "}
-              <select
-                value={accountId}
-                onChange={(e) =>
-                  router.push(
-                    documentsUrl(
-                      clientId,
-                      category,
-                      batchId,
-                      month,
-                      e.target.value,
-                    ),
-                  )
-                }
-              >
-                <option value="">Todas as contas</option>
-                {catalog?.accounts
-                  .filter((account) => account.client_id === clientId)
-                  .map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-          )}
+      <div className={styles.fields}>
+        {scoped && (
           <label>
-            Mês de trabalho{" "}
-            <input
-              type="month"
-              value={month === "unknown" ? "" : month}
+            Conta{" "}
+            <select
+              value={accountId}
               onChange={(e) =>
                 router.push(
                   documentsUrl(
                     clientId,
                     category,
                     batchId,
+                    month,
                     e.target.value,
-                    accountId,
                   ),
                 )
               }
-            />
+            >
+              <option value="">Todas as contas</option>
+              {catalog?.accounts
+                .filter((account) => account.client_id === clientId)
+                .map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+            </select>
           </label>
-          <Link
-            href={documentsUrl(
-              clientId,
-              category,
-              batchId,
-              "unknown",
-              accountId,
-            )}
-          >
-            Período a confirmar
-          </Link>
-          <Link href={documentsUrl(clientId, category, batchId, "", accountId)}>
-            Todos os meses
-          </Link>
-        </div>
-      )}
-      {office && scoped && (
+        )}
+        <label>
+          Mês de trabalho{" "}
+          <input
+            type="month"
+            value={month === "unknown" ? "" : month}
+            onChange={(e) =>
+              router.push(
+                documentsUrl(
+                  clientId,
+                  category,
+                  batchId,
+                  e.target.value,
+                  accountId,
+                ),
+              )
+            }
+          />
+        </label>
+        <Link
+          href={documentsUrl(clientId, category, batchId, "unknown", accountId)}
+        >
+          Período a confirmar
+        </Link>
+        <Link href={documentsUrl(clientId, category, batchId, "", accountId)}>
+          Todos os meses
+        </Link>
+      </div>
+      {scoped && (
         <OfficePackage
           key={`${request}:${selected.join(",")}`}
           clientId={clientId}
@@ -394,7 +381,7 @@ export function DocumentsPage({
           <div className={styles.list}>
             {items.map((item) => (
               <div key={`${item.job_id}:${item.context.version}`}>
-                {office && scoped && (
+                {scoped && (
                   <label>
                     <input
                       type="checkbox"

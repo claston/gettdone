@@ -3,7 +3,7 @@ import Link from "next/link";
 export default function OfficeOffer() {
   return (
     <main className="standard-page">
-      <h1>OFX Simples Escritório</h1>
+      <h1>OFX Simples PRO</h1>
       <p>
         Receba documentos financeiros, organize por cliente e mês, confira
         movimentos e prepare um pacote para a contabilidade.

@@ -78,8 +78,8 @@ recorte financeiro ou soma de lançamentos.
 
 ### Publicação e rollback da segunda iteração
 
-Não há nova migration. A organização continua usando `20261024_01` e o flag
-`PRO_ORGANIZATION_ENABLED`; o conversor básico independe deles.
+Não há nova migration. A organização continua usando `20261024_01` e a
+autorização do plano PRO; o conversor básico independe dessas tabelas.
 
 Publicar API antes do frontend, pois a nova UI usa `/api/pro/conversions`.
 Publicar o worker atualizado para capturar origem nas novas conversões;
@@ -162,10 +162,8 @@ entitlement. O isolamento por proprietário continua obrigatório mesmo no pilot
    `pro_accounts`, `pro_periods`, `pro_conversion_contexts` e
    `pro_conversion_periods`) e índices nas associações. Não modifica as tabelas
    existentes, não faz backfill nem transfere propriedade ou contratos.
-3. Publicar o backend. Em produção a funcionalidade fica desligada por padrão:
-   habilitar `PRO_ORGANIZATION_ENABLED=true` somente depois da migração e da
-   validação do acesso dos usuários do piloto. Em desenvolvimento o padrão é
-   habilitado. SQLite local cria as tabelas no bootstrap existente.
+3. Publicar o backend somente depois da migração e da validação do acesso
+   pelo plano PRO. SQLite local cria as tabelas no bootstrap existente.
 4. Publicar o frontend PRO, cujos rewrites same-origin incluem apenas os novos
    caminhos de organização necessários. Não é necessário publicar o worker.
 5. Confirmar com uma conta elegível: criar período de 20/09 a 04/10 sem cliente;
@@ -177,13 +175,13 @@ entitlement. O isolamento por proprietário continua obrigatório mesmo no pilot
 
 As tabelas novas não são exigidas pelo startup global do código antigo/worker.
 Isso permite aplicar a migration antes do rollout sem interromper a produção.
-Com o piloto desligado, as novas APIs retornam indisponibilidade e a conversão
-existente continua independente desse armazenamento.
+A conversão Free continua independente desse armazenamento. A versão atual
+do fluxo PRO segue o runbook em `office-mvp.md`.
 
 ## Rollback e impacto operacional
 
-Rollback preferido: desligar `PRO_ORGANIZATION_ENABLED`, reverter o frontend e,
-se necessário, o backend, mantendo as tabelas. Os dados de organização ficam
+Rollback preferido: reverter o frontend e, se necessário, o backend, seguindo
+o runbook em `office-mvp.md` e mantendo as tabelas. Os dados de organização ficam
 preservados e o fluxo anterior de conversão continua compatível.
 
 O downgrade técnico para `20261012_01` remove apenas as seis tabelas novas e

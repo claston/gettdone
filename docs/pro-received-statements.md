@@ -157,18 +157,18 @@ reconstruído por suposição.
    reler documentos. Tanto backfill quanto confirmações novas são idempotentes
    por organização/cliente. Os marcadores
    continuam válidos após expirar um lote.
-2. Publicar API e worker compatíveis, mantendo `PRO_ORGANIZATION_ENABLED` desligado
-   até concluir a preparação. Habilitá-lo também no worker para registrar novos
-   recebimentos. O refresh permite retomar registros disponíveis sem reconversão.
+2. Publicar API e worker compatíveis antes de admitir novos envios PRO, seguindo
+   `office-mvp.md`. O worker registra recebimentos PRO automaticamente, sem flag
+   adicional. O refresh permite retomar registros disponíveis sem reconversão.
 3. Publicar o frontend e validar uma identidade elegível, dois lotes do mesmo
    titular, uma identificação pendente, edição inline, PDF, autosave e ZIP.
 4. Monitorar 5xx de `/api/pro/receipts`, falhas `conversion_worker_message_failed`,
    DLQ, latência de refresh e crescimento do histórico. A identificação não é
    requisito para a conversão concluir.
 
-O rollback operacional desliga organização e reverte frontend/API/worker quando
-necessário, **mantendo tabelas e vínculos**. Conversões continua acessível. O
-prefira rollback de aplicação mantendo a migração. O downgrade técnico de
+O rollback operacional segue `office-mvp.md` e reverte frontend/API/worker quando
+necessário, **mantendo tabelas e vínculos**. Prefira rollback de aplicação mantendo
+a migração. O downgrade técnico de
 `20261101_01` remove somente a tabela de marcadores e perde as confirmações;
 exporte seus registros antes e restaure-os após reupgrade. Downgrades além de
 `20261028_02` também removem as duas tabelas históricas de recebimentos.

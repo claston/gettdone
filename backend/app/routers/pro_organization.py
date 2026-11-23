@@ -18,7 +18,6 @@ from app.application.received_statements import ReceiptRecoveryPending
 from app.dependencies import get_access_control_service, get_conversion_batch_service
 from app.routers.auth_session import SESSION_ACCESS_COOKIE_NAME, resolve_user_token_with_session
 from app.routers.pro_security import require_pro_browser_request
-from app.security_baseline import is_production_env, read_bool_env
 
 router = APIRouter(prefix="/api/pro/organization", tags=["PRO organization"])
 
@@ -45,13 +44,7 @@ def conversion_owner(
     return identity.identity_id
 
 
-def organization_enabled() -> bool:
-    return read_bool_env("PRO_ORGANIZATION_ENABLED", default=not is_production_env())
-
-
 def organization_owner(owner: str = Depends(conversion_owner)) -> str:
-    if not organization_enabled():
-        raise HTTPException(503, "Clientes e documentos ainda não estão disponíveis. Seus arquivos continuam acessíveis no Conversor.")
     return owner
 
 
@@ -207,23 +200,20 @@ def organize_conversion(
     snapshot = owned_snapshot(batches, owner, batch_id)
     if not any(record.job.job_id == job_id for record in snapshot.jobs):
         raise HTTPException(404, "Conversão não encontrada.")
-    if read_bool_env('PRO_OFFICE_ENABLED', default=False):
-        from app.application.office_documents import OfficeReviews
-        from app.application.office_telemetry import office_event
-        from app.routers.office_documents import current_record
-        record = next(record for record in snapshot.jobs if record.job.job_id == job_id)
-        record = current_record(record, owner)
-        if record.expires_at <= datetime.now(timezone.utc):
-            raise HTTPException(410, 'O prazo de acesso a este documento terminou.')
-        with organization_errors(), service.db.connect() as conn:
-            result = service.save_context_in_connection(conn, owner, job_id=job_id, **request.model_dump())
-            OfficeReviews(service.db).associate(conn, owner, job_id, result, record.expires_at)
-            conn.commit()
-        if result['client_id']:
-            office_event(access, owner, 'office_client_identified')
-        return result
-    with organization_errors():
-        return service.save_context(owner, job_id=job_id, **request.model_dump())
+    from app.application.office_documents import OfficeReviews
+    from app.application.office_telemetry import office_event
+    from app.routers.office_documents import current_record
+    record = next(record for record in snapshot.jobs if record.job.job_id == job_id)
+    record = current_record(record, owner)
+    if record.expires_at <= datetime.now(timezone.utc):
+        raise HTTPException(410, 'O prazo de acesso a este documento terminou.')
+    with organization_errors(), service.db.connect() as conn:
+        result = service.save_context_in_connection(conn, owner, job_id=job_id, **request.model_dump())
+        OfficeReviews(service.db).associate(conn, owner, job_id, result, record.expires_at)
+        conn.commit()
+    if result['client_id']:
+        office_event(access, owner, 'office_client_identified')
+    return result
 
 
 def decode_cursor(cursor: str | None):

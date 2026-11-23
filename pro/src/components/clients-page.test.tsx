@@ -10,6 +10,13 @@ import { ClientsPage } from "./clients-page";
 import type { OrganizationService } from "@/data/organization-service";
 import { receivedService } from "@/data/received-statements-service";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("@/data/documents-service", () => ({
+  documentsService: {
+    list: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
+  },
+}));
+
 afterEach(() => vi.restoreAllMocks());
 
 function editingService() {
@@ -54,6 +61,7 @@ describe("Carteira de clientes", () => {
       }),
     } as unknown as OrganizationService;
     render(<ClientsPage service={service} financialCenterVisible />);
+    expect(screen.getByLabelText("Mês de trabalho")).toBeVisible();
     expect(
       await screen.findByRole("link", { name: "Sem documentos" }),
     ).toHaveAttribute("href", "/documents?client=client_empty");

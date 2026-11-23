@@ -55,6 +55,22 @@ function services(items = [file]) {
 }
 
 describe("Documentos", () => {
+  it("oferece mês e pacote diretamente no PRO sem liberação adicional", async () => {
+    render(<DocumentsPage {...services()} clientId="client_a" />);
+    await screen.findByRole("link", { name: "Abrir revisão" });
+    expect(screen.getByLabelText("Mês de trabalho")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Conferir pacote (0)" }),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "Selecionar documento.pdf para o pacote",
+      }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Conferir pacote (1)" }),
+    ).toBeEnabled();
+  });
   it.each(["all", "invoices"] as const)(
     "usa a importação comum sem painel fiscal separado em %s",
     async (category) => {

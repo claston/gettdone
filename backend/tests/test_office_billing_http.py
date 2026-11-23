@@ -20,8 +20,12 @@ from tests.test_conversion_workspace_http_real_api import _run_pro_upload_http_s
 pytestmark = pytest.mark.real_http
 
 
-def test_structured_imports_complete_with_exhausted_document_allowance(tmp_path, monkeypatch):
-    monkeypatch.setenv('PRO_OFFICE_ENABLED', 'true')
+@pytest.mark.parametrize('legacy_flag', [None, 'false'])
+def test_structured_imports_complete_with_exhausted_document_allowance(tmp_path, monkeypatch, legacy_flag):
+    if legacy_flag is None:
+        monkeypatch.delenv('PRO_OFFICE_ENABLED', raising=False)
+    else:
+        monkeypatch.setenv('PRO_OFFICE_ENABLED', legacy_flag)
     originals = {'statement.csv': b'date,amount,description\n2026-04-01,10.00,Received\n',
         'statement.ofx': b'''OFXHEADER:100
 DATA:OFXSGML

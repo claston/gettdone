@@ -58,7 +58,7 @@ class ConversionLambdaProcessor:
         # Failure retries only receipt ingestion, never a completed conversion/quota charge.
         if self.receipt_recorder is not None:
             record = self.repository.get(kwargs["job_id"])
-            if record and record.job.batch_id == kwargs["expected_batch_id"]:
+            if record and record.job.product == "pro" and record.job.batch_id == kwargs["expected_batch_id"]:
                 self.receipt_recorder(record)
 
     def _process_conversion(
@@ -341,7 +341,7 @@ def build_lambda_processor() -> ConversionLambdaProcessor:
         max_receive_count=int(os.getenv("CONVERSION_SQS_MAX_RECEIVE_COUNT", "5")),
         lease_seconds=int(os.getenv("CONVERSION_JOB_LEASE_SECONDS", "900")),
         results_s3_prefix=os.getenv("CONVERSION_RESULTS_S3_PREFIX", "conversion/results"),
-        receipt_recorder=receipts.receive if _read_bool_env("PRO_ORGANIZATION_ENABLED", default=False) else None,
+        receipt_recorder=receipts.receive,
         completion_resumer=completion.resume,
     )
 
