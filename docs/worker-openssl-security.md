@@ -127,3 +127,36 @@ repete os checks e o scan do ECR; qualquer achado sem exceção válida continua
 Remover estas regras quando houver pacote corrigido e validar novamente runtime,
 conversões e scanners. Rollback: reverter as regras/checks deste incremento;
 novos deploys voltam a bloquear os sete achados, sem alteração de dados ou schema.
+
+## Achado QUIC adicional em 23/11/2026
+
+A [execução 45288555012](https://github.com/claston/gettdone/actions/runs/45288555012)
+do PR #632 passou nos testes e no canário da imagem, mas o Trivy bloqueou
+`CVE-2026-107494`, HIGH, no mesmo `libssl3t64=3.5.7-1~deb13u3`.
+O [Debian](https://security-tracker.debian.org/tracker/CVE-2026-107494) ainda não
+lista pacote corrigido, inclusive em Sid. A [correção upstream da série 3.5](https://github.com/openssl/openssl/commit/734c6cd7444bdbf589bfec917e47598c1b21ddd3)
+trata retransmissões de `NEW_CONNECTION_ID` que podem acumular frames
+`RETIRE_CONNECTION_ID` sem limite, causando falta de memória em uma conexão QUIC.
+
+Este achado exige avaliar **cliente e servidor QUIC**. A avaliação anterior de
+servidor, isoladamente, não basta. A arquitetura revisada usa TLS convencional;
+o relatório `openssl-runtime.json` dessa execução confirmou as 23 dependências,
+409 fontes da aplicação, 1.263 arquivos Python e 413 consumidores nativos na
+avaliação ampliada, sem referências às APIs opcionais verificadas. O verificador
+também confirmou TLS com validação de certificado e rejeição de UDP pelo CPython.
+Essas contagens registram a execução analisada; cada novo build refaz os checks.
+
+A nova regra exige a avaliação ampliada completa e mantém o escopo exato de
+pacote, versão, runtime e severidade, com expiração no início de **02/12/2026 UTC**.
+O relatório do scanner permanece intacto e a biblioteca continua vulnerável:
+esta é uma avaliação temporária de não aplicabilidade ao worker, não um patch.
+Ausência de qualquer evidência, introdução de cliente/servidor QUIC, mudança
+do inventário, severidade CRITICAL ou digest ECR divergente continuam bloqueando.
+
+Os testes reproduzem o bloqueio em Trivy/ECR antes da inclusão da regra e cobrem
+aceitação com evidência completa, rejeição de evidência antiga/incompleta,
+expiração e referências QUIC em dependências Python e nativas. A imagem Linux
+deve passar novamente pelo workflow Worker Debian antes do merge. Remover esta
+regra quando houver pacote corrigido; não estender automaticamente o prazo.
+Rollback: reverter apenas a inclusão desta CVE na política e no gate, restabelecendo
+o bloqueio de novas releases sem alterar dados ou a imagem em produção.

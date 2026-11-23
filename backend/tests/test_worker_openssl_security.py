@@ -55,7 +55,8 @@ def test_empty_application_is_not_evidence(tmp_path, checker):
 
 
 @pytest.mark.parametrize("reference", [
-    "OSSL_QUIC_client_method", "SSL_dane_enable", "SSL_CTX_dane_enable",
+    "OSSL_QUIC_client_method", "OSSL_QUIC_client_thread_method", "OSSL_QUIC_server_method",
+    "SSL_new_listener", "SSL_accept_connection", "SSL_dane_enable", "SSL_CTX_dane_enable",
     "AES-256-GCM-SIV", "EVP_aes_128_gcm_siv", "CMS_encrypt_ex", "CMS_verify",
     "PKCS7_verify", "PEM_X509_INFO_read_bio_ex",
 ])
