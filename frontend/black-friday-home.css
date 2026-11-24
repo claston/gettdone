@@ -1,0 +1,139 @@
+.black-friday-banner[hidden],
+.black-friday-nav-badge[hidden] {
+  display: none !important;
+}
+
+.black-friday-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 28px;
+  margin-bottom: 28px;
+  padding: 24px 28px;
+  border: 1px solid #42403a;
+  border-radius: 20px;
+  color: #fff;
+  background: linear-gradient(115deg, #11151d, #24262a);
+  box-shadow: 0 16px 32px -24px rgba(10, 24, 36, 0.55);
+}
+
+.black-friday-banner p {
+  margin: 0;
+}
+
+.black-friday-label {
+  color: #ffda70;
+  font-size: 0.875rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.black-friday-banner .black-friday-message {
+  margin-top: 6px;
+  font-size: 1.125rem;
+  line-height: 1.35;
+}
+
+.black-friday-price-label,
+.black-friday-deadline {
+  display: block;
+  color: #e2e4e8;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.black-friday-amount {
+  color: #ffda70;
+  white-space: nowrap;
+  font-size: 1rem;
+}
+
+#black-friday-home-price {
+  font-family: "Manrope", "Source Sans 3", sans-serif;
+  font-size: 1.75rem;
+  letter-spacing: -0.03em;
+}
+
+.black-friday-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 12px 20px;
+  border-radius: 999px;
+  color: #17191e;
+  background: #ffda70;
+  text-decoration: none;
+  font-size: 1rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.black-friday-cta:hover {
+  background: #ffe59a;
+}
+
+.black-friday-cta:focus-visible,
+.black-friday-plans-link:focus-visible {
+  outline: 3px solid #0f4fdb;
+  outline-offset: 4px;
+}
+
+.black-friday-cta:focus-visible {
+  outline-color: #fff;
+}
+
+.black-friday-plans-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.black-friday-nav-badge {
+  display: inline-block;
+  padding: 3px 7px;
+  border-radius: 6px;
+  color: #17191e;
+  background: #ffda70;
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+@media (max-width: 980px) {
+  .black-friday-banner {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 18px;
+  }
+
+  .black-friday-cta {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 540px) {
+  .black-friday-banner {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+
+  .black-friday-banner .black-friday-message {
+    font-size: 1rem;
+  }
+
+  .black-friday-price {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0 8px;
+  }
+
+  .black-friday-deadline {
+    width: 100%;
+  }
+}

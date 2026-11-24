@@ -13,6 +13,25 @@ Nos mensais Black, preço e franquia permanecem enquanto o cliente mantiver o pl
 
 Planos e assinaturas anteriores não são alterados. A campanha usa versões separadas. Durante a campanha, o catálogo público apresenta as três ofertas; depois, volta aos planos públicos anteriores. Pedidos feitos durante a campanha preservam seu preço e podem ser liberados após 30/11. O prazo contratado começa na liberação. Recursos pagos, upload de 10 MB, limites por arquivo e regras de extração seguem a política existente.
 
+## Destaque na página principal
+
+`index.html` (incluindo `/`) e `ofx-landing.html` exibem uma faixa preta/amarela
+abaixo do menu e um selo Black Friday ao lado de Planos. Ambos levam a
+`planos.html`. O menor preço mensal vem de `GET /plans`; o pacote pré-pago não é
+usado no valor anunciado como mensal. Não há mudança nos metadados SEO.
+
+Os destaques começam ocultos e só aparecem durante a janela da campanha quando
+o catálogo confirma uma oferta mensal Black válida. Erro, indisponibilidade ou
+catálogo sem essas ofertas mantém a página normal. O navegador consulta novamente
+ao retornar à aba ou restaurar a página e oculta a promoção na virada para
+01/12, às 00h de Brasília, mesmo com a aba aberta. A checagem de datas no navegador
+é uma proteção visual adicional; a API continua controlando as contratações.
+
+Publicar também `black-friday-home.css` e `black-friday-home.js` junto dos dois
+HTMLs. Se houver cache de HTML na CDN, invalidar `/`, `/index.html` e
+`/ofx-landing.html`. Para reverter apenas o destaque, reverter esses arquivos;
+os planos e contratos existentes não são afetados.
+
 ## Publicação
 
 1. A partir de `backend`, aplicar `venv/Scripts/python.exe -m alembic upgrade head`, com o banco e schema do ambiente de destino.
@@ -33,7 +52,7 @@ Planos e assinaturas anteriores não são alterados. A campanha usa versões sep
 - `backend/tests/test_black_friday.py`: preços, janela de venda, cache, liberação posterior, franquias, fim de mês, expiração, recursos pagos e preservação das assinaturas anteriores.
 - `backend/tests/test_black_friday_http.py`: catálogo e pedidos pela aplicação em HTTP real, com provedor de e-mail local em modo de teste.
 - `backend/tests/test_black_friday_migration.py`: PostgreSQL local via `BLACK_FRIDAY_TEST_DATABASE_URL`, upgrade/downgrade/re-upgrade, leitores anteriores, direitos PRO e vencimento. Recusa bancos fora de localhost.
-- `backend/venv/Scripts/python.exe scripts/smoke_black_friday.py`: desktop/celular, valores, três checkouts, links indisponíveis, menu e ausência de rolagem horizontal. Capturas em `tmp/black-friday/`.
+- `backend/venv/Scripts/python.exe scripts/smoke_black_friday.py`: desktop/celular, faixa e selo na home, destino dos links, preço dinâmico, catálogo indisponível, início/fim e expiração com aba aberta; valores, três checkouts, links indisponíveis, menu e ausência de rolagem horizontal de 320 a 1.440 px. Capturas em `tmp/black-friday/`, incluindo `home-desktop.png` e `home-mobile.png`.
 - `backend/venv/Scripts/python.exe scripts/test_backend.py`: suíte completa, com temporário exclusivo e limpeza automática.
 - Revisão das mensagens: página de planos, checkout, pedido na área do cliente, detalhe administrativo e e-mails. Preço trimestral identificado como pagamento único; franquia mensal e ausência de renovação explícitas. Oferta indisponível aponta para a página real de planos. Nenhuma regra de extração ou aviso financeiro foi alterado.
 - A rota antiga `POST /analyze` já está desativada na versão atual (405); o fluxo de conversão vigente usa `POST /convert` e download por `/convert-report/{processing_id}`. Não reativar a rota antiga para validar esta campanha.
