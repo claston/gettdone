@@ -1627,7 +1627,9 @@
     const grid = document.createElement("div");
     grid.className = "grid";
     appendLabeledParagraph(grid, "Plano", order.plan_name || "-");
-    appendLabeledParagraph(grid, "Valor", formatPriceBRL(order.price_cents));
+    appendLabeledParagraph(grid, "Valor", formatPriceBRL(order.price_cents) + window.OfxPlanCommercial.suffix(order));
+    const commercialTerms = window.OfxPlanCommercial.terms(order);
+    if (commercialTerms) appendLabeledParagraph(grid, "Condições", commercialTerms);
     appendLabeledParagraph(grid, "Cliente", order.customer_name || "-");
     appendLabeledParagraph(grid, "E-mail", order.customer_email || "-");
     appendLabeledParagraph(grid, "WhatsApp", order.customer_whatsapp || "-");

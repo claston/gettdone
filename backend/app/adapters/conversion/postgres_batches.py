@@ -156,7 +156,8 @@ class PostgresConversionBatchRepository:
                             job.idempotency_key,
                             ConversionJobStatus.UPLOADING.value,
                             self._jsonb(asdict(job.document)),
-                            self._jsonb(asdict(job.identity)),
+                            self._jsonb({key: value for key, value in asdict(job.identity).items()
+                                         if key != "quota_anchor_at" or value is not None}),
                             self._jsonb(asdict(job.preflight_result)),
                             batch.created_at,
                             batch.created_at,

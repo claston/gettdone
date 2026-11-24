@@ -80,7 +80,7 @@ class PostgresConversionAccessService:
     def _read_active_user_plan(self, *, user_id: str) -> dict[str, str | int] | None:
         # Reuse the API's subscription query, without authentication/admin services or caching.
         with self._lock, self._connect() as conn:
-            return read_active_user_plan(conn, fetchone=self._fetchone, user_id=user_id)
+            return read_active_user_plan(conn, fetchone=self._fetchone, user_id=user_id, now=self.now_provider())
 
     def ensure_quota_available(self, identity: IdentityContext, *, required_units: int = 1) -> None:
         with self._lock:

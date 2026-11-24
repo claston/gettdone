@@ -64,7 +64,11 @@ function open(
   };
   for (const node of dom.window.document.querySelectorAll("script[src]")) {
     const file = node.getAttribute("src").split("?")[0].split("/").pop();
-    if (file === "whatsapp-support.js" || file === `${page}.js`) {
+    if (
+      file === "whatsapp-support.js" ||
+      file === "plan-commercial.js" ||
+      file === `${page}.js`
+    ) {
       dom.window.eval(readFileSync(resolve(root, file), "utf8"));
     }
   }

@@ -246,6 +246,8 @@ class FilesystemConversionJobRepository:
                 payload[identity_field.name] = identity_field.default
             else:
                 raise ValueError(f"Conversion identity is missing required field: {identity_field.name}")
+        if payload.get("quota_anchor_at") is None:
+            payload.pop("quota_anchor_at", None)
         return payload
 
     def _record_path(self, job_id: str) -> Path:

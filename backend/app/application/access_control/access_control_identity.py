@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from app.application.black_friday import CODES
 from app.application.errors import InvalidUserTokenError
 
 if TYPE_CHECKING:
@@ -40,6 +41,7 @@ class AccessControlIdentityComponent:
                     plan_name=str(active_plan["name"]),
                     batch_conversion_enabled=bool(active_plan["batch_conversion_enabled"]),
                     batch_max_files=int(active_plan["batch_max_files"]),
+                    quota_anchor_at=active_plan.get("started_at") if active_plan["code"] in CODES else None,
                 )
             return service._identity_context_factory(
                 identity_type="user",

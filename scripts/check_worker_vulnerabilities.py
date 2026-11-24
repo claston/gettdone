@@ -18,7 +18,7 @@ BLOCKING = {"HIGH", "CRITICAL"}
 SEVERITIES = BLOCKING | {"MEDIUM", "LOW", "INFORMATIONAL", "UNDEFINED", "UNKNOWN", "NONE"}
 RULE_FIELDS = {"id", "package", "version", "severity", "runtime", "expires_at", "reason", "references"}
 OPTIONAL_OPENSSL_CVES = {"CVE-2026-121482", "CVE-2026-84786", "CVE-2026-95691", "CVE-2026-88823",
-                         "CVE-2026-107493", "CVE-2026-107496", "CVE-2026-95692"}
+                         "CVE-2026-107493", "CVE-2026-107496", "CVE-2026-95692", "CVE-2026-107494"}
 
 
 def validate_policy(policy):

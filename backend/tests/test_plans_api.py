@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi.testclient import TestClient
 
 from app.application.access_control import AccessControlService
@@ -18,6 +20,7 @@ def test_plans_returns_public_versioned_catalog(tmp_path) -> None:
     service = AccessControlService(
         state_file=tmp_path / "access-control-state.json",
         token_secret="test-secret",
+        now_provider=lambda: datetime(2026, 11, 20, tzinfo=timezone.utc),
     )
     app.dependency_overrides[get_access_control_service] = lambda: service
     client = TestClient(app)

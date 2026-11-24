@@ -353,7 +353,7 @@
         const intentId = escapeHtml(String(item.intent_id || "-"));
         const createdAt = formatDate(item.created_at);
         const planName = escapeHtml(String(item.plan_name || "-"));
-        const value = formatPriceBRL(item.price_cents);
+        const value = formatPriceBRL(item.price_cents) + window.OfxPlanCommercial.suffix(item);
         return `
           <tr>
             <td>${intentId}</td>
@@ -382,7 +382,7 @@
     const catalogPlan = plansByCode && orderPlanCode ? plansByCode.get(orderPlanCode) : null;
     if (orderIntentId) orderIntentId.textContent = String(data.intent_id || "-");
     if (orderPlanName) orderPlanName.textContent = String(data.plan_name || catalogPlan?.name || "-");
-    if (orderPlanPrice) orderPlanPrice.textContent = formatPriceBRL(data.price_cents);
+    if (orderPlanPrice) orderPlanPrice.textContent = formatPriceBRL(data.price_cents) + window.OfxPlanCommercial.suffix(data);
     if (orderPlanPages) {
       orderPlanPages.textContent =
         catalogPlan && Number.isFinite(Number(catalogPlan.quota_limit))

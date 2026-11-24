@@ -46,7 +46,9 @@ class AccessControlHelpersComponent:
         if service.active_plan_cache_ttl_seconds > 0:
             cached = service._active_plan_cache.get(user_id)
             now_monotonic = time.monotonic()
-            if cached is not None and cached[0] > now_monotonic:
+            ends_at = cached[1].get("ended_at") if cached and cached[1] else None
+            if (cached is not None and cached[0] > now_monotonic
+                    and (not ends_at or datetime.fromisoformat(ends_at) > service.now_provider())):
                 return cached[1]
 
         with service._lock:
@@ -55,6 +57,7 @@ class AccessControlHelpersComponent:
                     conn,
                     fetchone=service._fetchone,
                     user_id=user_id,
+                    now=service.now_provider(),
                 )
                 if service.active_plan_cache_ttl_seconds > 0:
                     expires_at = time.monotonic() + float(service.active_plan_cache_ttl_seconds)

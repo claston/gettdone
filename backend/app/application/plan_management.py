@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Callable
 
 from app.application.active_plan_reader import read_active_user_plan as read_active_user_plan
+from app.application.black_friday import CODES, PREPAID_CODE, add_months, is_available, seed_offers
 from app.application.errors import InvalidUserTokenError
 
 PlanTuple = tuple[str, str, int, str, int, int, int, bool, int]
@@ -23,6 +25,7 @@ def list_public_plans(
     *,
     fetchall: Callable,
     true_value: bool | int,
+    now: datetime,
 ) -> list[dict[str, str | int]]:
     rows = fetchall(
         conn,
@@ -44,13 +47,15 @@ def list_public_plans(
           batch_conversion_enabled,
           batch_max_files
         FROM plan_versions
-        WHERE is_public = ? AND is_active = ?
+        WHERE (is_public = ? OR code IN (?, ?, ?)) AND is_active = ?
         ORDER BY code ASC, version DESC
         """,
-        (true_value, true_value),
+        (true_value, *CODES, true_value),
     )
     items: list[dict[str, str | int]] = []
     for row in rows:
+        if (str(row["code"]) in CODES) != is_available(now):
+            continue
         items.append(
             {
                 "id": str(row["id"]),
@@ -116,6 +121,7 @@ def activate_user_plan(
     if plan is None:
         raise ValueError("plan not found")
 
+    ends_at = add_months(datetime.fromisoformat(now_iso), 3).isoformat() if normalized_code == PREPAID_CODE else None
     execute(
         conn,
         """
@@ -136,9 +142,9 @@ def activate_user_plan(
           started_at,
           ended_at
         )
-        VALUES (?, ?, ?, 'active', ?, NULL)
+        VALUES (?, ?, ?, 'active', ?, ?)
         """,
-        (subscription_id, user_id, str(plan["id"]), now_iso),
+        (subscription_id, user_id, str(plan["id"]), now_iso, ends_at),
     )
     execute(
         conn,
@@ -178,6 +184,7 @@ def seed_default_public_plans(
     now_iso: str,
     true_value: bool | int,
 ) -> None:
+    seed_offers(conn, execute=execute, now_iso=now_iso, true_value=true_value)
     for (
         code,
         name,

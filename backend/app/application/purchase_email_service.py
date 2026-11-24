@@ -4,6 +4,7 @@ from html import escape
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
+from app.application.black_friday import purchase_terms
 from app.application.contact_service import ContactDeliveryError, ContactProviderNotConfiguredError
 from app.application.purchase_flow import PurchaseFlow
 
@@ -36,6 +37,12 @@ def render_purchase_email(kind, intent, **extra):
     base = site_url()
     price = int(intent["price_cents"])
     period = {"monthly": "mês"}.get(intent["billing_period"], intent["billing_period"])
+    price_label = f"R$ {price // 100},{price % 100:02d}/{period}"
+    if intent["billing_period"] == "prepaid_quarter":
+        price_label = f"R$ {price // 100},{price % 100:02d} pelos 3 meses"
+    terms = purchase_terms(intent.get("plan_code", ""))
+    if terms:
+        price_label += ". " + terms
     number = os.getenv("WHATSAPP_SUPPORT_NUMBER", "").strip()
     if not re.fullmatch(r"[1-9][0-9]{7,14}", number):
         number = ""
@@ -45,7 +52,7 @@ def render_purchase_email(kind, intent, **extra):
     values = dict(name=intent["customer_name"], customer_email=intent["customer_email"],
                   customer_whatsapp=intent["customer_whatsapp"], customer_document=intent.get("customer_document") or "Não informado",
                   customer_notes=intent.get("customer_notes") or "Não informadas", order_reference=intent["id"],
-                  plan_name=intent["plan_name"], price_label=f"R$ {price // 100},{price % 100:02d}/{period}",
+                  plan_name=intent["plan_name"], price_label=price_label,
                   site_url=base + "/", login_url=base + "/login.html", admin_order_url=base + "/admin.html#orders",
                   requested_at=intent["created_at"], checkout_terms="Sim — aceite de contato para esta compra"
                   if intent.get("terms_accepted_at") else "Não registrado (pedido anterior)",

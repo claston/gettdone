@@ -7,6 +7,7 @@ from uuid import uuid4
 from app.application.anonymous_conversion_history import (
     record_anonymous_conversion_event as record_anonymous_conversion_event_query,
 )
+from app.application.black_friday import catalog_cache_seconds, is_available
 from app.application.checkout_management import (
     create_checkout_intent as create_checkout_intent_query,
 )
@@ -281,6 +282,11 @@ class AccessControlCheckoutComponent:
 
     def list_public_plans(self) -> list[dict[str, str | int]]:
         with self._service._lock:
+            now = self._service.now_provider()
+            phase = is_available(now)
+            if getattr(self, "_catalog_phase", None) != phase:
+                self._service._public_plans_cache = None
+            self._catalog_phase = phase
             cache = self._service._public_plans_cache
             now_monotonic = time.monotonic()
             if cache is not None and cache[0] > now_monotonic:
@@ -290,9 +296,10 @@ class AccessControlCheckoutComponent:
                     conn,
                     fetchall=self._service._fetchall,
                     true_value=self._service._true_value(),
+                    now=now,
                 )
             if self._service.public_plans_cache_ttl_seconds > 0:
-                expires_at = now_monotonic + float(self._service.public_plans_cache_ttl_seconds)
+                expires_at = now_monotonic + catalog_cache_seconds(now, self._service.public_plans_cache_ttl_seconds)
                 self._service._public_plans_cache = (expires_at, tuple(dict(item) for item in plans))
             return plans
 
