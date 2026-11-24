@@ -39,6 +39,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./ofx-landing.css?v=1" />
   <link rel="stylesheet" href="./topbar-unified.css?v=1" />
+  <link rel="stylesheet" href="./black-friday-home.css?v=1" />
   <script src="/privacy-consent.js?v=2" defer></script>
 </head>
 <body>
@@ -53,7 +54,7 @@
         <a href="#como-funciona">Como funciona</a>
         <a href="#faq">FAQ</a>
         <a href="./blog/">Blog</a>
-        <a href="./planos.html">Planos</a>
+        <a class="black-friday-plans-link" href="./planos.html">Planos <span id="black-friday-nav-badge" class="black-friday-nav-badge" hidden>Black Friday</span></a>
         <a href="./contato.html">Contato</a>
       </nav>
       <div class="top-actions">
@@ -64,6 +65,18 @@
   </header>
 
   <main>
+    <aside id="black-friday-banner" class="black-friday-banner" aria-label="Ofertas Black Friday" hidden>
+      <div>
+        <p class="black-friday-label">Black Friday OFX Simples</p>
+        <p class="black-friday-message">Mais páginas para sua rotina, por menos.</p>
+      </div>
+      <p class="black-friday-price">
+        <span class="black-friday-price-label">Planos a partir de</span>
+        <span class="black-friday-amount"><strong id="black-friday-home-price"></strong>/mês</span>
+        <span class="black-friday-deadline">Contrate até <time datetime="2026-11-30">30/11</time>.</span>
+      </p>
+      <a class="black-friday-cta" href="./planos.html">Ver ofertas da Black Friday <span aria-hidden="true">→</span></a>
+    </aside>
     <section class="hero" id="o-que-e">
       <div class="hero-copy">
         <p class="kicker">Converta seus extratos em PDF gratuitamente</p>
@@ -263,6 +276,7 @@
 
   <script src="/auth-session.js?v=1"></script>
   <script src="./ofx-landing.js?v=2"></script>
+  <script src="./black-friday-home.js?v=1"></script>
 </body>
 </html>
 

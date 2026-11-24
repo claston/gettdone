@@ -1,4 +1,5 @@
-"""Check promotional pricing, checkout selection and responsiveness with synthetic data."""
+"""Check campaign visibility, pricing and checkout with synthetic data and a controlled clock."""
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -16,6 +17,67 @@ PLANS = [
 ]
 
 
+def check_home_promotion(page, state, width, output, viewport):
+    page.clock.install(time=datetime(2026, 11, 24, 12, tzinfo=timezone.utc))
+    for path in ("/", "/index.html", "/ofx-landing.html"):
+        page.goto(f"http://127.0.0.1:8000{path}", wait_until="networkidle")
+        expect(page.locator("#black-friday-banner")).to_be_visible()
+        expect(page.locator("#black-friday-home-price")).to_contain_text("19,90")
+        if width <= 980:
+            page.locator("#menu-toggle").click()
+        else:
+            expect(page.locator("#menu-toggle")).to_be_hidden()
+        expect(page.locator("#black-friday-nav-badge")).to_be_visible()
+        expect(page.locator("#black-friday-nav-badge").locator("..")).to_have_attribute("href", "./planos.html")
+        if width <= 980:
+            page.locator("#menu-toggle").click()
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        if path == "/":
+            page.get_by_role("button", name="Recusar opcionais").click()
+            page.screenshot(path=str(output / f"home-{viewport}.png"))
+        page.locator("#black-friday-banner a").click()
+        expect(page.locator(".plan-card")).to_have_count(3)
+        assert urlparse(page.url).path == "/planos.html"
+
+    # The amount must come from an available monthly offer, never the prepaid total.
+    state["plans"] = PLANS[1:]
+    page.goto("http://127.0.0.1:8000/", wait_until="networkidle")
+    expect(page.locator("#black-friday-home-price")).to_contain_text("29,90")
+    regular_plans = [dict(PLANS[0], code="essencial", name="Essencial", price_cents=2990)]
+    for plans, status in (([PLANS[2]], 200), (regular_plans, 200), ([], 200), (PLANS, 503)):
+        state.update(plans=plans, status=status)
+        page.reload(wait_until="networkidle")
+        expect(page.locator("#black-friday-banner")).to_be_hidden()
+        expect(page.locator("#black-friday-nav-badge")).to_be_hidden()
+        expect(page.locator("#top-links a[href='./planos.html']")).to_have_count(1)
+    state.update(plans=PLANS, status=200)
+
+    # Sale boundaries are Brasília midnight, including expiry with a tab left open.
+    page.clock.set_system_time(datetime(2026, 11, 23, 2, 59, 58, tzinfo=timezone.utc))
+    page.reload(wait_until="networkidle")
+    expect(page.locator("#black-friday-banner")).to_be_hidden()
+    page.clock.set_system_time(datetime(2026, 11, 23, 3, tzinfo=timezone.utc))
+    page.reload(wait_until="networkidle")
+    expect(page.locator("#black-friday-banner")).to_be_visible()
+    page.clock.set_system_time(datetime(2026, 12, 1, 2, 59, 58, tzinfo=timezone.utc))
+    page.reload(wait_until="networkidle")
+    expect(page.locator("#black-friday-banner")).to_be_visible()
+    page.clock.fast_forward(2000)
+    expect(page.locator("#black-friday-banner")).to_be_hidden()
+    expect(page.locator("#black-friday-nav-badge")).to_be_hidden()
+    page.reload(wait_until="networkidle")
+    expect(page.locator("#black-friday-banner")).to_be_hidden()
+    page.clock.set_system_time(datetime(2026, 11, 24, 12, tzinfo=timezone.utc))
+    page.goto("http://127.0.0.1:8000/", wait_until="networkidle")
+    for check_width in (320, 980, 1024):
+        page.set_viewport_size({"width": check_width, "height": 1000})
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), check_width
+        if check_width > 980:
+            expect(page.locator("#menu-toggle")).to_be_hidden()
+    page.set_viewport_size({"width": width, "height": 1000})
+    print(f"Black Friday home {viewport}: navigation, catalog, boundaries and responsive layout passed.")
+
+
 def run():
     output = ROOT / "tmp/black-friday"
     output.mkdir(parents=True, exist_ok=True)
@@ -31,13 +93,15 @@ def run():
                 def route(request):
                     path = urlparse(request.request.url).path
                     if path == "/plans":
-                        request.fulfill(json={"items": state["plans"]})
+                        request.fulfill(status=state.get("status", 200), json={"items": state["plans"]})
                     elif path == "/public-config":
                         request.fulfill(json={})
                     elif path in ("/auth/me", "/auth/session/refresh"):
                         request.fulfill(status=401, json={})
                     elif path == "/telemetry/events" or path == "/auth/anonymous-session":
                         request.fulfill(json={"ok": True})
+                    elif path == "/":
+                        request.fulfill(body=(ROOT / "frontend/index.html").read_bytes(), content_type="text/html")
                     elif Path(path).suffix in (".html", ".js", ".css") and (ROOT / "frontend" / path.lstrip("/")).is_file():
                         request.fulfill(body=(ROOT / "frontend" / path.lstrip("/")).read_bytes(),
                                         content_type={".html": "text/html", ".js": "application/javascript",
@@ -46,8 +110,8 @@ def run():
                         request.fulfill(status=404, body="")
 
                 page.route("**/*", route)
+                check_home_promotion(page, state, width, output, viewport)
                 page.goto("http://127.0.0.1:8000/planos.html")
-                page.get_by_role("button", name="Recusar opcionais").click()
                 expect(page.locator(".plan-card")).to_have_count(3)
                 expect(page.locator(".hero")).to_contain_text("23 a 30/11/2026")
                 expect(page.locator(".plan-card-prepaid .price")).to_have_text("R$ 59,90 pelos 3 meses")
