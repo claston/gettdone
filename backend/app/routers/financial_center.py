@@ -31,6 +31,7 @@ def month(client_id: str, month: str | None = Query(default=None, pattern=r"^20\
                                day=day, pending=pending, limit=limit, cursor=cursor)
         from app.routers.pro_fiscal import features
         result["features"] = features()
+        result["features"]["document_conference"] = True
         return result
     except AnalysisNotFoundError:
         raise HTTPException(404, "Cliente ou conta não disponível.") from None

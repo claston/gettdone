@@ -14,6 +14,7 @@ export function documentsUrl(
   batch = "",
   month = "",
   account = "",
+  view = "",
 ) {
   const query = new URLSearchParams();
   if (client) query.set("client", client);
@@ -21,5 +22,6 @@ export function documentsUrl(
   if (batch) query.set("batch", batch);
   if (month) query.set("month", month);
   if (account) query.set("account", account);
+  if (view) query.set("view", view);
   return `/documents${query.size ? `?${query}` : ""}`;
 }

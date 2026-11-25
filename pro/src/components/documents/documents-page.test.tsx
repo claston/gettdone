@@ -21,6 +21,18 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("../financial/fiscal-workspace", () => ({
   FiscalWorkspace: () => <p>Notas do cliente</p>,
 }));
+vi.mock("./document-conference", () => ({
+  DocumentConference: ({
+    initialDocument,
+  }: {
+    initialDocument?: DocumentItem;
+  }) => (
+    <p>
+      Conferência de movimentos
+      {initialDocument ? `: ${initialDocument.filename}` : ""}
+    </p>
+  ),
+}));
 const catalog = {
   clients: [
     { id: "client_a", name: "Cliente A", tax_id: null, trade_name: "" },
@@ -55,10 +67,77 @@ function services(items = [file]) {
 }
 
 describe("Documentos", () => {
+  it("abre a conferência primeiro e permite partir de um documento sem misturar a entrega", async () => {
+    const receipt = {
+      ...file,
+      category: "receipts" as const,
+      context: { ...file.context, client_id: "client_a" },
+    };
+    render(
+      <DocumentsPage
+        {...services([receipt])}
+        clientId="client_a"
+        financialCenterVisible
+      />,
+    );
+    expect(await screen.findByText("Conferência de movimentos")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Conferir pacote (0)" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Trocar cliente").closest("details"),
+    ).not.toHaveAttribute("open");
+    fireEvent.click(screen.getByRole("button", { name: "Arquivos" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Comparar com movimentação" }),
+    );
+    expect(
+      screen.getByText("Conferência de movimentos: documento.pdf"),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Entrega" }));
+    fireEvent.click(
+      await screen.findByLabelText("Selecionar documento.pdf para o pacote"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Arquivos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Entrega" }));
+    expect(
+      screen.getByRole("button", { name: "Conferir pacote (1)" }),
+    ).toBeEnabled();
+  });
+
+  it("mantém a entrega ao mudar o mês e leva arquivos sem período para Arquivos", async () => {
+    render(
+      <DocumentsPage
+        {...services()}
+        clientId="client_a"
+        initialView="delivery"
+        month="2026-07"
+        financialCenterVisible
+      />,
+    );
+    await screen.findByLabelText("Mês de trabalho");
+    fireEvent.change(screen.getByLabelText("Mês de trabalho"), {
+      target: { value: "2026-08" },
+    });
+    expect(push).toHaveBeenCalledWith(
+      "/documents?client=client_a&month=2026-08&view=delivery",
+    );
+    expect(
+      screen.getByRole("link", { name: "Período a confirmar" }),
+    ).toHaveAttribute(
+      "href",
+      "/documents?client=client_a&month=unknown&view=files",
+    );
+  });
+
   it("oferece mês e pacote diretamente no PRO sem liberação adicional", async () => {
     render(<DocumentsPage {...services()} clientId="client_a" />);
     await screen.findByRole("link", { name: "Abrir revisão" });
     expect(screen.getByLabelText("Mês de trabalho")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Conferir pacote (0)" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Entrega" }));
     expect(
       screen.getByRole("button", { name: "Conferir pacote (0)" }),
     ).toBeVisible();
@@ -128,7 +207,7 @@ describe("Documentos", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Notas fiscais" })).toHaveAttribute(
       "href",
-      "/documents?client=client_a&type=invoices",
+      "/documents?client=client_a&type=invoices&view=files",
     );
     expect(
       screen.getAllByRole("button", { name: "Importar documentos" }),
@@ -158,7 +237,7 @@ describe("Documentos", () => {
       await screen.findByRole("link", { name: "Abrir revisão" }),
     ).toHaveAttribute(
       "href",
-      "/review/batch_a/job_a?return_to=%2Fdocuments%3Fclient%3Dclient_a%26type%3Dstatements",
+      "/review/batch_a/job_a?return_to=%2Fdocuments%3Fclient%3Dclient_a%26type%3Dstatements%26view%3Dfiles",
     );
     expect(props.service.list).toHaveBeenCalledWith(
       "category=statements&client_id=client_a",
