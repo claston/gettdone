@@ -9,7 +9,7 @@ export function reviewReturnTo(value: unknown): string {
   }
   if (url.origin === "https://ofx.local" && url.pathname === "/documents") {
     const query = new URLSearchParams();
-    for (const key of ["client", "type", "batch"]) {
+    for (const key of ["client", "type", "batch", "month", "account", "view"]) {
       const item = url.searchParams.get(key);
       if (item) query.set(key, item);
     }
