@@ -61,7 +61,9 @@ def test_postgres_upgrade_rollback_preserves_contracts(tmp_path):
             with pytest.raises(AnalysisAccessDeniedError):
                 pro.assert_entitled(conn, user.user_id)
         service._invalidate_active_plan_cache(user.user_id)
-        assert service.resolve_identity(None, user.token).plan_code is None
+        # The clock advanced a month; check the plan with a current session.
+        current_token = service.create_user_session(user_id=user.user_id).access_token
+        assert service.resolve_identity(None, current_token).plan_code is None
         migrate("downgrade", "20261122_01")
         migrate("upgrade", "head")
         with psycopg.connect(url) as conn:
