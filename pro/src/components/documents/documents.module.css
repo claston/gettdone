@@ -4,6 +4,22 @@
 .page > header {
   flex-wrap: wrap;
 }
+.clientHeading {
+  margin-bottom: 16px;
+}
+.clientHeading h1 {
+  margin: 0;
+  font-size: 26px;
+  letter-spacing: -0.03em;
+}
+.clientHeading p {
+  margin: 5px 0 0;
+}
+.conferenceToolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 12px;
+}
 .page input,
 .page select {
   font: inherit;
@@ -104,14 +120,47 @@
   border-bottom: 1px solid var(--line);
   margin-bottom: 24px;
 }
-.tabs a {
+.tabs a,
+.tabs button {
   padding: 12px 0;
   color: var(--ink-700);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
 }
-.tabs a[aria-current="page"] {
+.tabs a[aria-current="page"],
+.tabs button[aria-pressed="true"] {
   border-bottom: 2px solid var(--blue-700);
   color: var(--blue-700);
   font-weight: 700;
+}
+.clientPicker {
+  margin: 12px 0;
+}
+.clientPicker summary {
+  color: var(--blue-700);
+  cursor: pointer;
+  width: fit-content;
+}
+.document > section {
+  padding-top: 18px;
+}
+.document > section > p {
+  font-size: 0.875rem;
+}
+.document > section > div {
+  margin-top: 16px;
+}
+.document > section button {
+  margin: 4px 6px 4px 0;
+}
+.document > section details {
+  margin-top: 16px;
+}
+.document > section summary {
+  cursor: pointer;
+  color: var(--blue-700);
 }
 .filters {
   display: flex;
@@ -159,6 +208,17 @@
   }
   .actions {
     gap: 12px;
+  }
+  .conferenceToolbar {
+    justify-content: flex-start;
+  }
+  .workFilters {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px;
+  }
+  .workFilters label {
+    min-width: 0;
   }
   .panel {
     padding: 16px;

@@ -5,6 +5,7 @@ organization UI disabled, as in the workspace CI suite.
 """
 
 import json
+import re
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -163,6 +164,22 @@ def run(base):
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.route("**/*", intercept)
+        file_list = page.get_by_label("Arquivos recebidos", exact=True)
+
+        def file_button(filename):
+            return file_list.get_by_role("button", name=re.compile(re.escape(filename)), include_hidden=True)
+
+        def expect_files(filenames):
+            expect(file_list.get_by_role("button")).to_have_count(len(filenames))
+            for filename in filenames:
+                expect(file_button(filename)).to_be_visible()
+
+        def select_file(filename):
+            file_button(filename).click()
+            expect(file_button(filename)).to_have_attribute("aria-pressed", "true")
+            expect(page.get_by_role("article")).to_have_count(1)
+            expect(page.get_by_role("article", name=filename, exact=True)).to_be_visible()
+
         try:
             page.goto(base + "/dashboard")
             expect(page.get_by_role("heading", name="Clientes", exact=True)).to_be_visible()
@@ -202,46 +219,56 @@ def run(base):
             assert len(held_documents) == 1
             route = held_documents.pop()
             route.fulfill(json=document_page(parse_qs(urlsplit(route.request.url).query)))
-            expect(page.get_by_role("article")).to_have_count(3)
+            client_files = ["extrato-1.ofx", "extrato-2.ofx", "comprovante.pdf"]
+            expect_files(client_files)
+            for filename in client_files:
+                select_file(filename)
             page.get_by_role("button", name="Atualizar documentos", exact=True).click()
-            expect(page.get_by_role("button", name="Atualizando…", exact=True)).to_be_disabled()
+            expect(page.get_by_role("button", name="Atualizando documentos", exact=True)).to_be_disabled()
             types = page.get_by_role("navigation", name="Tipos de documento")
             types.get_by_role("link", name="Extratos", exact=True).click()
-            expect(page.get_by_role("article")).to_have_count(2)
+            expect_files(["extrato-1.ofx", "extrato-2.ofx"])
+            expect(page.get_by_role("article", name="comprovante.pdf", exact=True)).to_have_count(0)
             assert len(held_refreshes) == 1, "Changing filters must not restart synchronization"
             loading["refresh"] = False
             held_refreshes.pop().fulfill(json={"next_cursor": None})
             expect(page.get_by_role("button", name="Atualizar documentos", exact=True)).to_be_enabled()
             expect(types.get_by_role("link", name="Extratos", exact=True)).to_have_attribute("aria-current", "page")
+            select_file("extrato-1.ofx")
             page.get_by_role("article", name="extrato-1.ofx").get_by_role("link", name="Abrir revisão").click()
             expect(page.locator("tr[data-transaction-id='tx_1']")).to_be_visible()
             page.get_by_role("link", name="Voltar aos documentos", exact=True).click()
-            expect(page).to_have_url(base + "/documents?client=client_browser&type=statements")
+            expect(page).to_have_url(base + "/documents?client=client_browser&type=statements&view=files")
             types.get_by_role("link", name="Comprovantes", exact=True).click()
-            expect(page.get_by_role("article")).to_have_count(1)
-            expect(page.get_by_role("article", name="comprovante.pdf")).to_be_visible()
+            expect_files(["comprovante.pdf"])
+            select_file("comprovante.pdf")
             types.get_by_role("link", name="Notas fiscais", exact=True).click()
+            expect_files([])
             expect(page.get_by_role("article")).to_have_count(0)
             expect(page.get_by_label("Importar nota XML ou PDF")).to_have_count(0)
             expect(page.get_by_role("region", name="Notas fiscais importadas")).to_have_count(0)
             expect(page.get_by_role("button", name="Importar documentos", exact=True)).to_be_enabled()
-            expect(page.get_by_role("combobox", name="Cliente", exact=True)).to_have_value("client_browser")
             types.get_by_role("link", name="Todos", exact=True).click()
             expect(types.get_by_role("link", name="Todos", exact=True)).to_have_attribute("aria-current", "page")
-            expect(page.get_by_role("article")).to_have_count(3)
+            expect_files(client_files)
+            page.get_by_text("Trocar cliente", exact=True).click()
+            expect(page.get_by_role("combobox", name="Cliente", exact=True)).to_have_value("client_browser")
             page.get_by_role("combobox", name="Cliente", exact=True).select_option("unassigned")
-            expect(page.get_by_role("article")).to_have_count(1)
-            expect(page.get_by_role("article", name="identificar.pdf")).to_be_visible()
+            expect_files(["identificar.pdf"])
+            select_file("identificar.pdf")
             types.get_by_role("link", name="Extratos", exact=True).click()
             expect(types.get_by_role("link", name="Extratos", exact=True)).to_have_attribute("aria-current", "page")
+            expect_files([])
             expect(page.get_by_role("article")).to_have_count(0)
             page.get_by_role("combobox", name="Cliente", exact=True).select_option("client_expired")
+            expect_files([])
             expired = page.get_by_role("article", name="expirado.ofx")
             expect(expired).to_have_count(0)
             expect(page.get_by_text("Nenhum documento encontrado nesta lista com os filtros selecionados.")).to_be_visible()
             page.screenshot(path=str(output / "expired-document.png"), full_page=True)
 
             # Import any document through the client context, including a fiscal PDF.
+            page.get_by_text("Trocar cliente", exact=True).click()
             page.get_by_role("combobox", name="Cliente", exact=True).select_option("client_browser")
             expect(page.get_by_role("heading", name="Padaria corrigida", exact=True)).to_be_visible()
             page.get_by_role("button", name="Importar documentos", exact=True).click()
@@ -257,7 +284,9 @@ def run(base):
             expect(page.get_by_role("article", name=imported["filename"])).to_contain_text("Padaria corrigida")
             assert imported["context"]["version"] == 1
             page.get_by_role("link", name="Ver todos os documentos do cliente", exact=True).click()
-            expect(page.get_by_role("article")).to_have_count(4)
+            client_files.append(imported["filename"])
+            expect_files(client_files)
+            select_file(imported["filename"])
             page.screenshot(path=str(output / "documents-desktop.png"), full_page=True)
 
             # Retained deep links still support reviewing multiple original batches and exporting.
@@ -282,7 +311,16 @@ def run(base):
                 if screen == "clients":
                     expect(page.get_by_role("link", name="Cliente sem documentos", exact=True)).to_be_visible()
                 else:
-                    expect(page.get_by_role("article")).to_have_count(1 if screen == "unassigned" else 4)
+                    filenames = ["identificar.pdf"] if screen == "unassigned" else client_files
+                    expect_files(filenames)
+                    expect(page.get_by_role("article")).to_have_count(0)
+                    for filename in filenames:
+                        select_file(filename)
+                        expect(file_list).to_be_hidden()
+                        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Detail mobile overflow"
+                        page.get_by_role("button", name="Voltar aos arquivos", exact=True).click()
+                        expect_files(filenames)
+                        expect(page.get_by_role("article")).to_have_count(0)
                 assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), f"{screen} mobile overflow"
                 page.screenshot(path=str(output / f"{screen}-mobile.png"), full_page=True)
             page.get_by_role("button", name="Importar documentos", exact=True).click()
@@ -303,9 +341,11 @@ def run(base):
                        "checks": ["client and document loading", "client roster without documents", "accent and tax ID search",
                                   "client creation and optimistic edit", "explicit refresh across filters", "document categories",
                                   "unassigned documents", "expired documents hidden", "separate fiscal upload hidden",
-                                  "review return preserves filters",
-                                  "client-context fiscal PDF import and persisted association", "multi-batch editor compatibility", "original batch review",
-                                  "scoped export", "desktop/mobile", "independent converter", "legacy screens hidden"]}
+                                  "file selection and matching detail", "review return preserves filters and files view",
+                                  "client-context fiscal PDF import and persisted association", "multi-batch editor compatibility",
+                                  "original batch review",
+                                  "scoped export", "desktop/mobile", "mobile file detail and back navigation",
+                                  "independent converter", "legacy screens hidden"]}
             (output / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
             print("PRO clients/documents browser PASS: roster, filters, import, confirmation, review, export and mobile.")
         except Exception:

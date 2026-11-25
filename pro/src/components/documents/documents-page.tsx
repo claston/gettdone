@@ -24,6 +24,8 @@ import {
   useAvailableImports,
 } from "../use-available-imports";
 import { NewConversionForm } from "../new-conversion-form";
+import { DocumentConference } from "./document-conference";
+import conferenceStyles from "./conference.module.css";
 import styles from "./documents.module.css";
 import {
   documentCategories,
@@ -39,6 +41,7 @@ export function DocumentsPage({
   service = documentsService,
   organization = organizationService,
   financialCenterVisible = false,
+  initialView,
 }: {
   clientId?: string;
   category?: DocumentCategory;
@@ -48,6 +51,7 @@ export function DocumentsPage({
   service?: DocumentsService;
   organization?: OrganizationService;
   financialCenterVisible?: boolean;
+  initialView?: "conference" | "files" | "delivery";
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<string[]>([]);
@@ -57,6 +61,7 @@ export function DocumentsPage({
   const [cursors, setCursors] = useState<string[]>([""]);
   const [upload, setUpload] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [conferenceRevision, setConferenceRevision] = useState(0);
   const [notice, setNotice] = useState("");
   const [operationError, setOperationError] = useState("");
   const [snapshot, setSnapshot] = useState<{
@@ -66,6 +71,16 @@ export function DocumentsPage({
   } | null>(null);
   const client = catalog?.clients.find((c) => c.id === clientId);
   const scoped = Boolean(clientId && clientId !== "unassigned");
+  const canConfer = scoped && financialCenterVisible && month !== "unknown";
+  const [view, setView] = useState<"conference" | "files" | "delivery">(
+    initialView ??
+      (canConfer && !batchId && category === "all" ? "conference" : "files"),
+  );
+  const activeView = view === "conference" && !canConfer ? "files" : view;
+  const [selectedDocument, setSelectedDocument] = useState("");
+  const [comparisonDocument, setComparisonDocument] =
+    useState<DocumentItem | null>(null);
+  const [fileDetail, setFileDetail] = useState(false);
   const query = new URLSearchParams({ category });
   if (month) query.set("month", month);
   if (accountId) query.set("account_id", accountId);
@@ -77,7 +92,16 @@ export function DocumentsPage({
   const key = request;
   const current = snapshot?.key === key ? snapshot : null;
   const items = useAvailableImports(current?.data?.items, documentAvailability);
-  const returnTo = documentsUrl(clientId, category, batchId, month, accountId);
+  const returnTo = documentsUrl(
+    clientId,
+    category,
+    batchId,
+    month,
+    accountId,
+    activeView,
+  );
+  const selectedFile =
+    items.find((item) => item.job_id === selectedDocument) ?? items[0];
 
   useEffect(() => {
     const abort = new AbortController();
@@ -169,6 +193,7 @@ export function DocumentsPage({
       );
     } finally {
       setAttempt((a) => a + 1);
+      setConferenceRevision((value) => value + 1);
       setRefreshing(false);
     }
   };
@@ -181,16 +206,33 @@ export function DocumentsPage({
             <span>/</span>
             <span>{client?.name ?? "Cliente selecionado"}</span>
           </nav>
-          <header className="page-title">
+          <header className={styles.clientHeading}>
             <div>
               <h1>{client?.name ?? "Documentos do cliente"}</h1>
               <p>{client?.tax_id}</p>
             </div>
           </header>
           <nav className={styles.tabs} aria-label="Áreas do cliente">
-            <Link href={documentsUrl(clientId)} aria-current="page">
-              Documentos
-            </Link>
+            {canConfer && (
+              <button
+                aria-pressed={activeView === "conference"}
+                onClick={() => setView("conference")}
+              >
+                Conferência
+              </button>
+            )}
+            <button
+              aria-pressed={activeView === "files"}
+              onClick={() => setView("files")}
+            >
+              Arquivos
+            </button>
+            <button
+              aria-pressed={activeView === "delivery"}
+              onClick={() => setView("delivery")}
+            >
+              Entrega
+            </button>
             {financialCenterVisible && (
               <Link href={`/financial/${encodeURIComponent(clientId)}`}>
                 Central Financeira
@@ -199,22 +241,41 @@ export function DocumentsPage({
           </nav>
         </>
       )}
-      <header className="page-title">
-        <div>
-          {scoped ? <h2>Documentos</h2> : <h1>Documentos</h1>}
-          <p>
-            {scoped
-              ? "Consulte e confira os documentos deste cliente."
-              : "Consulte os documentos do escritório e organize os arquivos por cliente."}
-          </p>
-        </div>
+      <header
+        className={
+          activeView === "conference" ? styles.conferenceToolbar : "page-title"
+        }
+      >
+        {activeView !== "conference" && (
+          <div>
+            {scoped ? (
+              <h2>
+                {activeView === "delivery"
+                  ? "Preparar entrega"
+                  : "Arquivos recebidos"}
+              </h2>
+            ) : (
+              <h1>Documentos</h1>
+            )}
+            <p>
+              {scoped
+                ? activeView === "delivery"
+                  ? "Selecione os arquivos e confira o conteúdo antes de baixar."
+                  : "Selecione um arquivo para consultar, conferir ou organizar."
+                : "Consulte os documentos do escritório e organize os arquivos por cliente."}
+            </p>
+          </div>
+        )}
         <div className={styles.actions}>
           <button
             className="secondary-button"
             disabled={refreshing || upload}
             onClick={() => void refresh()}
+            aria-label={
+              refreshing ? "Atualizando documentos" : "Atualizar documentos"
+            }
           >
-            {refreshing ? "Atualizando…" : "Atualizar documentos"}
+            {refreshing ? "Atualizando…" : "Atualizar"}
           </button>
           {!upload && (
             <button
@@ -239,28 +300,31 @@ export function DocumentsPage({
         </p>
       )}
       {catalog && (
-        <div className={styles.fields}>
-          <label>
-            Cliente
-            <select
-              value={clientId}
-              disabled={upload}
-              onChange={(e) =>
-                router.push(documentsUrl(e.target.value, category, "", month))
-              }
-            >
-              <option value="">Todos os clientes</option>
-              <option value="unassigned">Sem cliente associado</option>
-              {catalog.clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+        <details className={styles.clientPicker} open={!scoped}>
+          <summary>{scoped ? "Trocar cliente" : "Selecionar cliente"}</summary>
+          <div className={styles.fields}>
+            <label>
+              Cliente
+              <select
+                value={clientId}
+                disabled={upload}
+                onChange={(e) =>
+                  router.push(documentsUrl(e.target.value, category, "", month))
+                }
+              >
+                <option value="">Todos os clientes</option>
+                <option value="unassigned">Sem cliente associado</option>
+                {catalog.clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </details>
       )}
-      <div className={styles.fields}>
+      <div className={`${styles.fields} ${styles.workFilters}`}>
         {scoped && (
           <label>
             Conta{" "}
@@ -274,6 +338,7 @@ export function DocumentsPage({
                     batchId,
                     month,
                     e.target.value,
+                    activeView,
                   ),
                 )
               }
@@ -302,28 +367,37 @@ export function DocumentsPage({
                   batchId,
                   e.target.value,
                   accountId,
+                  activeView,
                 ),
               )
             }
           />
         </label>
         <Link
-          href={documentsUrl(clientId, category, batchId, "unknown", accountId)}
+          href={documentsUrl(
+            clientId,
+            category,
+            batchId,
+            "unknown",
+            accountId,
+            "files",
+          )}
         >
           Período a confirmar
         </Link>
-        <Link href={documentsUrl(clientId, category, batchId, "", accountId)}>
-          Todos os meses
+        <Link
+          href={documentsUrl(
+            clientId,
+            category,
+            batchId,
+            "",
+            accountId,
+            activeView,
+          )}
+        >
+          {activeView === "conference" ? "Mês mais recente" : "Todos os meses"}
         </Link>
       </div>
-      {scoped && (
-        <OfficePackage
-          key={`${request}:${selected.join(",")}`}
-          clientId={clientId}
-          month={month}
-          jobs={selected}
-        />
-      )}
       {batchId && (
         <div className={styles.notice}>
           <p>
@@ -347,100 +421,207 @@ export function DocumentsPage({
           onClose={() => setUpload(false)}
         />
       )}
-      <nav className={styles.filters} aria-label="Tipos de documento">
-        {Object.entries(documentCategories).map(([value, label]) => (
-          <Link
-            key={value}
-            href={documentsUrl(
-              clientId,
-              value as DocumentCategory,
-              batchId,
-              month,
-              accountId,
-            )}
-            aria-current={category === value ? "page" : undefined}
-          >
-            {label}
-          </Link>
-        ))}
-      </nav>
-      {!current ? (
-        <p role="status">Carregando documentos…</p>
-      ) : current.error ? (
-        <div role="alert">
-          <p>{current.error}</p>
-          <button
-            className="secondary-button"
-            onClick={() => setAttempt((a) => a + 1)}
-          >
-            Tentar novamente
-          </button>
-        </div>
-      ) : (
+      {activeView === "conference" && (
+        <DocumentConference
+          key={`${clientId}:${month}:${accountId}:${comparisonDocument?.job_id ?? ""}:${conferenceRevision}`}
+          clientId={clientId}
+          month={month}
+          accountId={accountId}
+          returnTo={returnTo}
+          initialDocument={comparisonDocument}
+        />
+      )}
+      {activeView !== "conference" && (
         <>
-          <div className={styles.list}>
-            {items.map((item) => (
-              <div key={`${item.job_id}:${item.context.version}`}>
-                {scoped && (
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={selected.includes(item.job_id)}
-                      disabled={
-                        !selected.includes(item.job_id) && selected.length >= 30
-                      }
-                      onChange={(e) =>
-                        setSelected((ids) =>
-                          e.target.checked
-                            ? [...ids, item.job_id]
-                            : ids.filter((id) => id !== item.job_id),
-                        )
-                      }
-                    />
-                    Selecionar {item.filename} para o pacote
-                  </label>
+          <nav className={styles.filters} aria-label="Tipos de documento">
+            {Object.entries(documentCategories).map(([value, label]) => (
+              <Link
+                key={value}
+                href={documentsUrl(
+                  clientId,
+                  value as DocumentCategory,
+                  batchId,
+                  month,
+                  accountId,
+                  activeView,
                 )}
-                <DocumentRow
-                  item={item}
-                  catalog={catalog}
-                  organization={organization}
-                  client={batchId ? client : undefined}
-                  returnTo={returnTo}
-                  onSaved={() => setAttempt((a) => a + 1)}
-                />
-              </div>
+                aria-current={category === value ? "page" : undefined}
+              >
+                {label}
+              </Link>
             ))}
-          </div>
-          {!items.length && (
-            <p>
-              {current.data?.next_cursor
-                ? "Nenhum documento com esses filtros nesta página. Consulte a próxima página."
-                : "Nenhum documento encontrado nesta lista com os filtros selecionados."}
-            </p>
+          </nav>
+          {!current ? (
+            <p role="status">Carregando documentos…</p>
+          ) : current.error ? (
+            <div role="alert">
+              <p>{current.error}</p>
+              <button
+                className="secondary-button"
+                onClick={() => setAttempt((a) => a + 1)}
+              >
+                Tentar novamente
+              </button>
+            </div>
+          ) : (
+            <>
+              {activeView === "delivery" ? (
+                <div className={styles.list}>
+                  {items.map((item) => (
+                    <div key={`${item.job_id}:${item.context.version}`}>
+                      {scoped && (
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={selected.includes(item.job_id)}
+                            disabled={
+                              !selected.includes(item.job_id) &&
+                              selected.length >= 30
+                            }
+                            onChange={(e) =>
+                              setSelected((ids) =>
+                                e.target.checked
+                                  ? [...ids, item.job_id]
+                                  : ids.filter((id) => id !== item.job_id),
+                              )
+                            }
+                          />
+                          Selecionar {item.filename} para o pacote
+                        </label>
+                      )}
+                      <p className={styles.type}>
+                        {item.filename} · {documentCategories[item.category]}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div
+                  className={`${conferenceStyles.layout} ${fileDetail ? conferenceStyles.detailOpen : ""}`}
+                >
+                  <div
+                    className={conferenceStyles.list}
+                    aria-label="Arquivos recebidos"
+                  >
+                    {items.map((item) => (
+                      <button
+                        className={conferenceStyles.row}
+                        key={item.job_id}
+                        aria-pressed={selectedFile?.job_id === item.job_id}
+                        onClick={() => {
+                          setSelectedDocument(item.job_id);
+                          setFileDetail(true);
+                        }}
+                      >
+                        <span className={conferenceStyles.meta}>
+                          {documentCategories[item.category]}
+                        </span>
+                        <strong>{item.filename}</strong>
+                        <span className={conferenceStyles.meta}>
+                          {item.movement_start_date
+                            ? `Data identificada: ${item.movement_start_date.split("-").reverse().join("/")}`
+                            : "Período a confirmar"}
+                        </span>
+                        <span className={conferenceStyles.badge}>
+                          {item.status === "completed"
+                            ? item.is_bank
+                              ? item.bank_reviewed
+                                ? "Revisão bancária concluída"
+                                : "Revisão bancária pendente"
+                              : item.verification?.status === "verified"
+                                ? "Conferido manualmente"
+                                : item.verification?.status === "attention"
+                                  ? "Precisa de atenção"
+                                  : item.verification?.status ===
+                                      "unprocessable"
+                                    ? "Não processável"
+                                    : "A conferir"
+                            : item.status === "failed"
+                              ? "Leitura não concluída"
+                              : "Em processamento"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  {selectedFile && (
+                    <div className={conferenceStyles.detail}>
+                      <button
+                        className={`secondary-button ${conferenceStyles.back}`}
+                        onClick={() => setFileDetail(false)}
+                      >
+                        Voltar aos arquivos
+                      </button>
+                      {canConfer &&
+                        ["receipts", "invoices"].includes(
+                          selectedFile.category,
+                        ) &&
+                        selectedFile.context.client_id === clientId &&
+                        selectedFile.status === "completed" && (
+                          <button
+                            className="primary-button"
+                            onClick={() => {
+                              setComparisonDocument(selectedFile);
+                              setView("conference");
+                            }}
+                          >
+                            Comparar com movimentação
+                          </button>
+                        )}
+                      <DocumentRow
+                        key={`${selectedFile.job_id}:${selectedFile.context.version}`}
+                        item={selectedFile}
+                        catalog={catalog}
+                        organization={organization}
+                        client={batchId ? client : undefined}
+                        returnTo={returnTo}
+                        onSaved={() => setAttempt((value) => value + 1)}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+              {scoped && activeView === "delivery" && (
+                <div className={styles.panel}>
+                  <OfficePackage
+                    key={`${request}:${selected.join(",")}`}
+                    clientId={clientId}
+                    month={month}
+                    jobs={selected}
+                  />
+                </div>
+              )}
+              {!items.length && (
+                <p>
+                  {current.data?.next_cursor
+                    ? "Nenhum documento com esses filtros nesta página. Consulte a próxima página."
+                    : "Nenhum documento encontrado nesta lista com os filtros selecionados."}
+                </p>
+              )}
+              <div className={styles.pagination}>
+                {cursors.length > 1 && (
+                  <button
+                    className="secondary-button"
+                    onClick={() => setCursors((values) => values.slice(0, -1))}
+                  >
+                    Página anterior
+                  </button>
+                )}
+                {current.data?.next_cursor && (
+                  <button
+                    className="secondary-button"
+                    onClick={() =>
+                      setCursors((values) => [
+                        ...values,
+                        current.data!.next_cursor!,
+                      ])
+                    }
+                  >
+                    Próxima página
+                  </button>
+                )}
+              </div>
+            </>
           )}
-          <div className={styles.pagination}>
-            {cursors.length > 1 && (
-              <button
-                className="secondary-button"
-                onClick={() => setCursors((values) => values.slice(0, -1))}
-              >
-                Página anterior
-              </button>
-            )}
-            {current.data?.next_cursor && (
-              <button
-                className="secondary-button"
-                onClick={() =>
-                  setCursors((values) => [
-                    ...values,
-                    current.data!.next_cursor!,
-                  ])
-                }
-              >
-                Próxima página
-              </button>
-            )}
-          </div>
         </>
       )}
     </main>

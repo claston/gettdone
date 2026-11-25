@@ -12,6 +12,19 @@ it("preserva apenas o contexto autorizado de Documentos", () => {
   );
 });
 
+it.each(["conference", "files", "delivery"])(
+  "preserva mês, conta e área %s ao voltar da revisão para Documentos",
+  (view) => {
+    expect(
+      reviewReturnTo(
+        `/documents?client=client_a&type=statements&batch=batch_a&month=2026-10&account=account_a&view=${view}&token=secret`,
+      ),
+    ).toBe(
+      `/documents?client=client_a&type=statements&batch=batch_a&month=2026-10&account=account_a&view=${view}`,
+    );
+  },
+);
+
 it("preserva filtros de conversões e rejeita destinos externos", () => {
   expect(
     reviewReturnTo(

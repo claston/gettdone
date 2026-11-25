@@ -18,13 +18,18 @@ export default async function Page({
   const batch = value("batch");
   return (
     <DocumentsPage
-      key={`${client}:${category}:${batch}:${value("month")}:${value("account")}`}
+      key={`${client}:${category}:${batch}:${value("month")}:${value("account")}:${value("view")}`}
       clientId={client}
       category={category}
       batchId={batch}
       month={value("month")}
       accountId={value("account")}
       financialCenterVisible={financialCenterVisible}
+      initialView={
+        ["conference", "files", "delivery"].includes(value("view"))
+          ? (value("view") as "conference" | "files" | "delivery")
+          : undefined
+      }
     />
   );
 }

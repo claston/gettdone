@@ -134,41 +134,53 @@ export function OfficeDocumentControls({
       ) : null}
       {!item.is_bank && (
         <>
-          <label>
-            Tipo para organização{" "}
-            <select
-              value={kind}
-              disabled={busy}
-              onChange={(e) => setKind(e.target.value)}
-            >
-              <option value="">Manter tipo identificado</option>
-              <option value="bank_statement">Extrato</option>
-              <option value="bank_receipt">Comprovante</option>
-              <option value="fiscal_invoice">Nota fiscal</option>
-              <option value="support_document">Documento de apoio</option>
-              <option value="unknown">Desconhecido</option>
-            </select>
-          </label>
+          <details>
+            <summary>Corrigir tipo do documento</summary>
+            <label>
+              Tipo para organização{" "}
+              <select
+                value={kind}
+                disabled={busy}
+                onChange={(e) => setKind(e.target.value)}
+              >
+                <option value="">Manter tipo identificado</option>
+                <option value="bank_statement">Extrato</option>
+                <option value="bank_receipt">Comprovante</option>
+                <option value="fiscal_invoice">Nota fiscal</option>
+                <option value="support_document">Documento de apoio</option>
+                <option value="unknown">Desconhecido</option>
+              </select>
+            </label>
+          </details>
           <p>
             A conferência manual não confirma pagamento nem conciliação. Ela não
             cria movimentos bancários.
           </p>
-          <div>
-            {(Object.entries(statuses) as [VerificationStatus, string][]).map(
-              ([status, label]) => (
-                <button
-                  key={status}
-                  className="secondary-button"
-                  disabled={busy}
-                  onClick={() => void save(status)}
-                >
-                  {status === "verified"
-                    ? "Marcar como verificado"
-                    : `Marcar: ${label.toLowerCase()}`}
-                </button>
-              ),
-            )}
-          </div>
+          <button
+            className="primary-button"
+            disabled={busy}
+            onClick={() => void save("verified")}
+          >
+            Marcar como verificado
+          </button>
+          <details>
+            <summary>Outras opções de conferência</summary>
+            <div>
+              {(Object.entries(statuses) as [VerificationStatus, string][]).map(
+                ([status, label]) =>
+                  status !== "verified" && (
+                    <button
+                      key={status}
+                      className="secondary-button"
+                      disabled={busy}
+                      onClick={() => void save(status)}
+                    >
+                      {`Marcar: ${label.toLowerCase()}`}
+                    </button>
+                  ),
+              )}
+            </div>
+          </details>
         </>
       )}
       {error && <p role="alert">{error}</p>}

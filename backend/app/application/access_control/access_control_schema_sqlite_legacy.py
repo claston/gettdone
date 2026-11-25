@@ -675,9 +675,12 @@ def apply_sqlite_legacy_schema_bootstrap(service: AccessControlService, conn) ->
     if not identity_table_existed:
         conn.execute(protect_existing_client_identities())
 
+    from app.application.document_conference_schema import document_conference_schema
     from app.application.office_schema import office_schema
     from app.application.purchase_schema import purchase_schema
     for statement in office_schema():
+        conn.execute(statement)
+    for statement in document_conference_schema():
         conn.execute(statement)
 
     checkout_columns = {row["name"] for row in conn.execute("PRAGMA table_info(checkout_intents)").fetchall()}

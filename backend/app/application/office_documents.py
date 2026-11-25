@@ -129,6 +129,9 @@ class OfficeReviews(OrganizationService):
     def purge(self, *, now=None):
         before = (now or datetime.now(timezone.utc)).isoformat()
         with self.db.connect() as conn:
-            for table in ('pro_document_review_events', 'pro_document_reviews', 'office_document_associations'):
+            for table in ('pro_document_link_events', 'pro_document_movement_links',
+                          'pro_document_review_events', 'pro_document_reviews', 'office_document_associations'):
+                if not self.db.table_exists(conn, table):
+                    continue
                 self._write(conn, f'DELETE FROM {table} WHERE expires_at <= ?', (before,))
             conn.commit()

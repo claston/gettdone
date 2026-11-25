@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -40,3 +42,19 @@ def test_worker_debian_ci_tests_the_canonical_production_image_on_every_main_pus
     assert "file: Dockerfile.lambda.debian" not in workflow
     assert "-r backend/requirements-worker.txt" in workflow
     assert 'Path("backend/requirements-worker.txt")' in workflow
+
+
+@pytest.mark.parametrize("name", ["Dockerfile.lambda", "Dockerfile.lambda.debian"])
+def test_worker_images_replace_vulnerable_zstd_with_signed_security_package(name):
+    dockerfile = (ROOT / name).read_text(encoding="utf-8")
+    assert "signed-by=/usr/share/keyrings/debian-archive-keyring.gpg" in dockerfile
+    assert "https://security.debian.org/debian-security trixie-security main" in dockerfile
+    assert "libzstd1=1.5.7+dfsg-1+deb13u1" in dockerfile
+    install = next(line for line in dockerfile.splitlines() if "dpkg -i" in line)
+    assert "/build/libzstd1_*.deb" in install
+    # Copy the patched binaries with their authentic package inventory into runtime.
+    package_copy = dockerfile.split("for package in", 1)[1].split("done", 1)[0]
+    assert "libzstd1; do" in package_copy
+    assert "dpkg-deb -x /build/${package}_*.deb /runtime-libs" in package_copy
+    assert 'dpkg-query -s "$package"' in package_copy
+    assert 'dpkg-query --control-path "$package" md5sums' in package_copy

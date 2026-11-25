@@ -1,0 +1,242 @@
+.workspace {
+  display: grid;
+  gap: 20px;
+  font-size: 1rem;
+}
+.heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.heading h2,
+.heading h3,
+.heading h4 {
+  margin: 0;
+}
+.heading p {
+  margin: 6px 0 0;
+}
+.layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.2fr);
+  align-items: start;
+  gap: 20px;
+}
+.list {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.row {
+  display: grid;
+  gap: 9px;
+  padding: 18px;
+  width: 100%;
+  text-align: left;
+  color: var(--ink-900);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.row[aria-pressed="true"] {
+  border-color: var(--blue-700);
+  background: var(--blue-50);
+  box-shadow: inset 3px 0 var(--blue-700);
+}
+.rowTop {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.875rem;
+}
+.rowTop strong,
+.money {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.meta {
+  color: var(--ink-700);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.badge,
+.badgeWarning {
+  justify-self: start;
+  width: fit-content;
+  padding: 4px 8px;
+  background: var(--blue-100);
+  color: var(--navy-800);
+  border-radius: 5px;
+  font-size: 0.875rem;
+}
+.badgeWarning {
+  background: var(--amber-100);
+  color: #754400;
+}
+.detail {
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 22px;
+  overflow-wrap: anywhere;
+}
+.actions,
+.footer,
+.pagination {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+.footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.warning,
+.notice {
+  display: flex;
+  align-items: start;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 8px;
+  background: var(--amber-100);
+  color: #754400;
+  line-height: 1.5;
+}
+.warning svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.notice {
+  display: block;
+  background: var(--blue-50);
+  color: var(--ink-900);
+}
+.empty {
+  padding: 26px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.relations {
+  padding: 16px 0;
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.relations h4,
+.evidence h4,
+.original h4 {
+  margin: 0 0 12px;
+}
+.relation {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.textButton,
+.textLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 0;
+  border: 0;
+  background: transparent;
+  color: var(--blue-700);
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.textButton:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.field {
+  display: grid;
+  gap: 8px;
+  font-size: 0.875rem;
+}
+.field select {
+  width: 100%;
+  min-width: 0;
+}
+.evidence {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.evidence dl {
+  display: grid;
+  gap: 10px;
+}
+.evidence dl > div {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(0, 2fr);
+  gap: 12px;
+}
+.evidence dt {
+  color: var(--ink-700);
+}
+.evidence dd {
+  margin: 0;
+}
+.check {
+  display: flex;
+  align-items: start;
+  gap: 10px;
+  margin-top: 18px;
+}
+.check input {
+  flex-shrink: 0;
+  margin-top: 5px;
+}
+.original {
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.back {
+  display: none;
+}
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .detail {
+    display: none;
+    padding: 16px;
+  }
+  .detailOpen .detail {
+    display: block;
+  }
+  .detailOpen .list {
+    display: none;
+  }
+  .back {
+    display: inline-flex;
+    margin-bottom: 20px;
+  }
+  .row,
+  .field select {
+    font-size: 1rem;
+  }
+}
+@media (pointer: coarse) {
+  .textButton,
+  .textLink,
+  .footer button,
+  .actions button {
+    min-height: 44px;
+  }
+}
