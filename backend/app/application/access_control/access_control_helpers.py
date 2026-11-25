@@ -13,7 +13,7 @@ from uuid import uuid4
 from app.application.checkout_management import (
     insert_checkout_intent_event as insert_checkout_intent_event_query,
 )
-from app.application.errors import InvalidUserTokenError
+from app.application.errors import InvalidSessionTokenError, InvalidUserTokenError
 from app.application.plan_management import (
     read_active_user_plan as read_active_user_plan_query,
 )
@@ -106,33 +106,18 @@ class AccessControlHelpersComponent:
         return hmac.compare_digest(expected_hash, stored_hash)
 
     def encode_token(self, user_id: str) -> str:
-        version = self._credential_version(user_id)
-        subject = f"{user_id}:{version}" if version else user_id
-        payload = base64.urlsafe_b64encode(subject.encode("utf-8")).decode("utf-8").rstrip("=")
-        signature = hmac.new(self._service.token_secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()[:24]
-        return f"{payload}.{signature}"
-
-    def decode_token(self, token: str) -> str:
+        # Every newly issued credential has a database session and an expiry.
         try:
-            payload, signature = token.split(".", 1)
-            expected = hmac.new(self._service.token_secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()[:24]
-            if not hmac.compare_digest(expected, signature):
-                raise InvalidUserTokenError
-            padded_payload = payload + "=" * (-len(payload) % 4)
-            decoded = base64.urlsafe_b64decode(padded_payload.encode("utf-8")).decode("utf-8")
-            if not decoded.startswith("usr_"):
-                raise InvalidUserTokenError
-            user_id, separator, version = decoded.partition(":")
-            if self._credential_version(user_id) != (int(version) if separator else 0):
-                raise InvalidUserTokenError
-            return user_id
-        except (ValueError, UnicodeDecodeError):
+            return self._service.create_user_session(user_id=user_id).access_token
+        except InvalidSessionTokenError:
             raise InvalidUserTokenError from None
 
-    def _credential_version(self, user_id: str) -> int:
-        with self._service._lock, self._service._connect() as conn:
-            row = self._service._fetchone(conn, "SELECT credential_version FROM users WHERE id = ?", (user_id,))
-        return int(row["credential_version"]) if row else 0
+    def decode_token(self, token: str) -> str:
+        # The retired, deterministic HMAC format is deliberately never accepted.
+        try:
+            return self._service.get_user_by_session_access_token(token).user_id
+        except InvalidSessionTokenError:
+            raise InvalidUserTokenError from None
 
     def encode_anonymous_identity_token(self, *, subject_kind: str, subject_value: str) -> str:
         normalized_kind = str(subject_kind or "").strip()

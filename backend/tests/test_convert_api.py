@@ -874,7 +874,9 @@ def test_convert_rejects_text_pdf_above_250_pages(tmp_path, monkeypatch) -> None
     app.dependency_overrides.clear()
 
 
-def test_convert_blocks_4th_attempt_with_structured_quota_detail(tmp_path) -> None:
+def test_convert_blocks_4th_attempt_with_structured_quota_detail(tmp_path, monkeypatch) -> None:
+    # This case exercises financial behavior / identity quota under an explicit network budget.
+    monkeypatch.setenv("PUBLIC_CONVERSION_NETWORK_LIMIT", "100")
     client = build_client(tmp_path)
     data = {"anonymous_fingerprint": "anon-fp-d"}
     files = {"file": ("sample.pdf", b"%PDF data", "application/pdf")}

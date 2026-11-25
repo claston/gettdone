@@ -5,6 +5,7 @@ pydantic==2.11.3
 pypdf==7.1.0
 pypdfium2==5.8.0
 # Keep PDF rendering without the unused local OCR wrapper.
-Pillow>=8.0.0
+Pillow==13.0.0
+urllib3==2.8.0
 psycopg[binary,pool]==3.2.9
 awslambdaric==4.2.2

@@ -48,8 +48,14 @@
   function getNextPath() {
     const params = new URLSearchParams(window.location.search);
     const next = String(params.get("next") || "").trim();
-    if (!next.startsWith("/") || next.startsWith("//")) return "/ofx-convert.html";
-    return next;
+    if (!next.startsWith("/") || /[\\\x00-\x20\x7f]/.test(next)) return "/ofx-convert.html";
+    try {
+      const destination = new URL(next, window.location.origin);
+      if (destination.origin !== window.location.origin) return "/ofx-convert.html";
+      return destination.pathname + destination.search + destination.hash;
+    } catch (_error) {
+      return "/ofx-convert.html";
+    }
   }
 
   async function bootstrapExistingSession() {

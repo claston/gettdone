@@ -5,7 +5,6 @@
   const LEGACY_PROFILE_KEY = "ofxsimples_profile_hint";
   const LEGACY_TOKEN_COOKIE = "ofxsimples_user_token";
   const CURRENT_USER_CACHE_TTL_MS = 30 * 1000;
-  let migrationPromise = null;
   let refreshPromise = null;
   let currentUserPromise = null;
   let currentUserCacheExpiresAt = 0;
@@ -23,29 +22,6 @@
     if (isDevFrontend) return "http://127.0.0.1:8000";
     if (global.location.origin && global.location.origin !== "null") return global.location.origin;
     return "http://127.0.0.1:8000";
-  }
-
-  function readLegacyCookie() {
-    const entries = String(document.cookie || "").split(";");
-    for (const entry of entries) {
-      const parts = entry.split("=");
-      const name = String(parts.shift() || "").trim();
-      if (name !== LEGACY_TOKEN_COOKIE) continue;
-      try {
-        return decodeURIComponent(parts.join("=").trim());
-      } catch (_error) {
-        return "";
-      }
-    }
-    return "";
-  }
-
-  function readLegacyToken() {
-    try {
-      return String(localStorage.getItem(LEGACY_TOKEN_KEY) || "").trim() || readLegacyCookie();
-    } catch (_error) {
-      return readLegacyCookie();
-    }
   }
 
   function legacyCookieDomains() {
@@ -70,31 +46,8 @@
     }
   }
 
-  async function migrateLegacySession() {
-    const legacyToken = readLegacyToken();
-    if (!legacyToken) {
-      clearLegacyAuthArtifacts();
-      return false;
-    }
-    try {
-      const response = await global.fetch(`${resolveApiBase()}/auth/session/migrate`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${legacyToken}` },
-        credentials: "include",
-      });
-      if (response.ok || [400, 401, 403].includes(response.status)) {
-        clearLegacyAuthArtifacts();
-      }
-      return response.ok;
-    } catch (_error) {
-      // Preserve the legacy value until the backend migration endpoint is reachable.
-      return false;
-    }
-  }
-
-  function ready() {
-    if (!migrationPromise) migrationPromise = migrateLegacySession();
-    return migrationPromise;
+  async function ready() {
+    clearLegacyAuthArtifacts();
   }
 
   async function refreshSession() {

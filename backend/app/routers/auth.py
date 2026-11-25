@@ -46,6 +46,7 @@ from app.routers.pro_security import (
     pro_session_rate_limit_key,
     require_pro_browser_request,
 )
+from app.routers.public_request_security import enforce_public_request
 from app.schemas import (
     AnonymousSessionRequest,
     AnonymousSessionResponse,
@@ -103,6 +104,7 @@ def _session_auth_response(*, service: AccessControlService, session_bundle: Ses
 @router.post("/auth/anonymous-session", response_model=AnonymousSessionResponse)
 def anonymous_session(
     payload: AnonymousSessionRequest,
+    request: Request,
     anonymous_cookie_token: str | None = Cookie(default=None, alias=ANONYMOUS_IDENTITY_COOKIE_NAME),
     service: AccessControlService = Depends(get_access_control_service),
 ) -> JSONResponse:
@@ -110,6 +112,7 @@ def anonymous_session(
         payload=payload,
         anonymous_cookie_token=anonymous_cookie_token,
         service=service,
+        before_create=lambda: enforce_public_request(service, request, kind="session"),
     )
 
 
@@ -125,11 +128,15 @@ def pro_anonymous_session(
     service: AccessControlService = Depends(get_access_control_service),
     rate_limiter: ProSessionRateLimiter = Depends(get_pro_session_rate_limiter),
 ) -> JSONResponse:
+    def before_create():
+        enforce_public_request(service, request, kind="session")
+        rate_limiter.enforce(pro_session_rate_limit_key(request))
+
     return _anonymous_session_response(
         payload=payload,
         anonymous_cookie_token=anonymous_cookie_token,
         service=service,
-        before_create=lambda: rate_limiter.enforce(pro_session_rate_limit_key(request)),
+        before_create=before_create,
     )
 
 
@@ -270,7 +277,7 @@ async def register(
     payload: RegisterRequest,
     service: AccessControlService = Depends(get_access_control_service),
     contact_service: ContactService = Depends(get_contact_service),
-) -> RegisterResponse:
+) -> RegisterResponse | JSONResponse:
     if not payload.accepted_terms:
         raise HTTPException(
             status_code=400,
@@ -330,7 +337,7 @@ async def register(
     record_successful_login_safely(service, user_id=user.user_id, auth_method="local_password")
 
     identity = service.resolve_identity(anonymous_fingerprint=None, user_token=user.token)
-    return RegisterResponse(
+    response_model = RegisterResponse(
         user_id=user.user_id,
         name=user.name,
         email=user.email,
@@ -345,6 +352,7 @@ async def register(
         verification_required=False,
         verification_status="verified",
     )
+    return JSONResponse(content=response_model.model_dump(), headers={"Cache-Control": "no-store"})
 
 
 @router.post("/auth/email-verification/confirm", response_model=EmailVerificationConfirmResponse)
@@ -395,7 +403,7 @@ def login(
     payload: LoginRequest,
     request: Request,
     service: AccessControlService = Depends(get_access_control_service),
-) -> LoginResponse:
+) -> JSONResponse:
     enforce_login_limit(service, request, payload.email)
     try:
         user = service.authenticate_user(email=payload.email, password=payload.password)
@@ -417,7 +425,7 @@ def login(
     )
 
     identity = service.resolve_identity(anonymous_fingerprint=None, user_token=user.token)
-    return LoginResponse(
+    response_model = LoginResponse(
         user_id=user.user_id,
         name=user.name,
         email=user.email,
@@ -430,6 +438,7 @@ def login(
         max_upload_size_bytes=identity.max_upload_size_bytes,
         max_pages_per_file=identity.max_pages_per_file,
     )
+    return JSONResponse(content=response_model.model_dump(), headers={"Cache-Control": "no-store"})
 
 
 @router.get("/auth/me", response_model=AuthMeResponse)
@@ -517,28 +526,8 @@ def pro_session_login(
 
 
 @router.post("/auth/session/migrate", response_model=SessionAuthResponse)
-def session_migrate(
-    request: Request,
-    authorization: str | None = Header(default=None),
-    service: AccessControlService = Depends(get_access_control_service),
-) -> JSONResponse:
-    legacy_token = resolve_header_query_or_cookie_token(
-        authorization=authorization,
-        query_token=None,
-        cookie_token=None,
-    )
-    if not legacy_token:
-        raise HTTPException(status_code=401, detail="Legacy user token is required.")
-    try:
-        user = service.get_user_by_token(user_token=legacy_token)
-    except InvalidUserTokenError:
-        raise HTTPException(status_code=401, detail="Invalid user token.")
-    session_bundle = service.create_user_session(
-        user_id=user.user_id,
-        ip_address=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
-    )
-    return _session_auth_response(service=service, session_bundle=session_bundle)
+def session_migrate() -> JSONResponse:
+    raise HTTPException(status_code=410, detail="Sua sessão antiga foi encerrada. Entre novamente na sua conta.")
 
 
 @router.post("/auth/session/refresh", response_model=SessionAuthResponse)
@@ -565,12 +554,17 @@ def session_refresh(
 
 @router.post("/auth/session/logout", response_model=SessionLogoutResponse)
 def session_logout(
+    authorization: str | None = Header(default=None),
+    access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
     refresh_cookie_token: str | None = Cookie(default=None, alias=SESSION_REFRESH_COOKIE_NAME),
     service: AccessControlService = Depends(get_access_control_service),
 ) -> JSONResponse:
     refresh_token = (refresh_cookie_token or "").strip()
     if refresh_token:
         service.revoke_user_session(refresh_token=refresh_token)
+    access_token = resolve_header_query_or_cookie_token(authorization=authorization, query_token=None, cookie_token=access_cookie_token)
+    if access_token:
+        service.session.revoke_user_session_by_access_token(access_token)
     response = JSONResponse(content=SessionLogoutResponse().model_dump())
     response.headers["Cache-Control"] = "no-store"
     clear_session_cookies(response)

@@ -83,7 +83,8 @@ NEWFILEUID:NONE
             assert access.get_remaining_quota(identity) == 0
             with access.db.connect() as conn:
                 assert access.db.fetchone(conn, 'SELECT COUNT(*) AS n FROM conversion_quota_consumptions')['n'] == 1
-            assert client.post('/admin/plans/office/configure', json={'operation_id': 'unauthorized', 'version': 2}).status_code == 401
+            # A valid session proves identity, but it never grants the admin role.
+            assert client.post('/admin/plans/office/configure', json={'operation_id': 'unauthorized', 'version': 2}).status_code == 403
         from tests.admin_setup import register_admin
         register_admin(access, name='Admin', email='admin-office@example.test', password='strong-password')
         with LoopbackClient(base_url=url) as admin_client:

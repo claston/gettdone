@@ -15,6 +15,7 @@ from app.application.errors import (
 )
 from app.application.login_tracking import record_successful_login_safely
 from app.application.marketing_consent import CURRENT_PRODUCT_UPDATES_CONSENT_VERSION
+from app.application.safe_redirect import safe_next_path
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -209,10 +210,7 @@ class GoogleOAuthService:
             raise GoogleOAuthNotConfiguredError
 
     def _normalize_next_path(self, next_path: str | None) -> str:
-        raw = str(next_path or "").strip()
-        if not raw.startswith("/"):
-            return "/client-area.html"
-        return raw
+        return safe_next_path(next_path)
 
     def _build_code_challenge(self, code_verifier: str) -> str:
         # codeql[py/weak-sensitive-data-hashing]: PKCE (RFC 7636) requires SHA-256 for code_challenge (S256), not password hashing.

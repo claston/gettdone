@@ -1031,7 +1031,11 @@ ${meta.percent}
             const payload = await parseJsonSafe(response);
 
             if (!response.ok) {
-                const detail = payload.detail || "Falha ao processar conciliacao.";
+                const detail = typeof payload.detail === "string"
+                    ? payload.detail
+                    : payload.detail && typeof payload.detail.message === "string"
+                        ? payload.detail.message
+                        : "Não foi possível processar a conciliação.";
                 if (response.status === 422 && isSheetColumnValidationError(detail)) {
                     setSheetValidationErrorState(true);
                 }

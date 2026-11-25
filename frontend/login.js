@@ -18,8 +18,14 @@
   function getNextPath() {
     const params = new URLSearchParams(window.location.search);
     const next = String(params.get("next") || "").trim();
-    if (!next.startsWith("/") || next.startsWith("//")) return "/client-area.html";
-    return next;
+    if (!next.startsWith("/") || /[\\\x00-\x20\x7f]/.test(next)) return "/client-area.html";
+    try {
+      const destination = new URL(next, window.location.origin);
+      if (destination.origin !== window.location.origin) return "/client-area.html";
+      return destination.pathname + destination.search + destination.hash;
+    } catch (_error) {
+      return "/client-area.html";
+    }
   }
 
   function shouldForceAuth() {

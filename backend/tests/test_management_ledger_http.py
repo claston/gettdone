@@ -13,6 +13,8 @@ pytestmark = pytest.mark.real_http
 
 
 def test_management_reports_round_trip_and_export_policy(tmp_path, monkeypatch):
+    # This case exercises financial behavior / identity quota under an explicit network budget.
+    monkeypatch.setenv("PUBLIC_CONVERSION_NETWORK_LIMIT", "100")
     monkeypatch.setenv('TEXTRACT_ENABLED', 'false')
     monkeypatch.setenv('PDF_OCR_ENABLED', 'false')
     with public_client(tmp_path) as client:

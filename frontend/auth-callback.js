@@ -14,8 +14,14 @@
 
   function getSafeNextPath(params) {
     const raw = String(params.get("next") || "").trim();
-    if (!raw.startsWith("/") || raw.startsWith("//")) return "/client-area.html";
-    return raw;
+    if (!raw.startsWith("/") || /[\\\x00-\x20\x7f]/.test(raw)) return "/client-area.html";
+    try {
+      const destination = new URL(raw, window.location.origin);
+      if (destination.origin !== window.location.origin) return "/client-area.html";
+      return destination.pathname + destination.search + destination.hash;
+    } catch (_error) {
+      return "/client-area.html";
+    }
   }
 
   function clearCallbackQuery() {

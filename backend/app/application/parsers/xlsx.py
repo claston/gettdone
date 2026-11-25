@@ -1,9 +1,7 @@
 import re
 from collections.abc import Callable
 from datetime import datetime
-from io import BytesIO
-
-from openpyxl import load_workbook
+from itertools import chain, islice
 
 from app.application.errors import InvalidFileContentError
 from app.application.models import NormalizedTransaction
@@ -16,6 +14,7 @@ from app.application.parsers.column_mapping import (
     resolve_sheet_field_map,
 )
 from app.application.parsers.csv import DATE_FORMATS
+from app.application.xlsx_safety import check_xlsx_deadline, iter_bounded_xlsx_rows, open_bounded_xlsx
 
 _HEADER_SCAN_LIMIT = 20
 
@@ -34,48 +33,27 @@ def parse_xlsx_transactions_with_mapping(
     field_resolver = resolver or resolve_sheet_field_map
     required = required_fields or REQUIRED_FIELDS
     resolve_amount = amount_resolver or _resolve_amount_from_amount_column
-    try:
-        workbook = load_workbook(filename=BytesIO(raw_bytes), data_only=True, read_only=True)
-    except Exception as exc:  # pragma: no cover - openpyxl exception details are not stable.
-        raise InvalidFileContentError("Unable to read XLSX content.") from exc
-
-    if not workbook.worksheets:
-        raise InvalidFileContentError("XLSX does not contain worksheets.")
-
-    try:
-        sheet = workbook.worksheets[0]
-        rows = [list(row) for row in sheet.iter_rows(values_only=True)]
-        header_row_index, fieldnames, field_map = _locate_header_row(rows, field_resolver, required)
-        documents = []
-        if "document_number" in field_map:
-            column = fieldnames.index(field_map["document_number"]) + 1
-            documents = [_document_number(cells[0]) for cells in sheet.iter_rows(
-                min_row=header_row_index + 2, min_col=column, max_col=column)]
-    finally:
-        workbook.close()
-
     transactions: list[NormalizedTransaction] = []
-    for index, raw_row in enumerate(rows[header_row_index + 1 :]):
-        if not raw_row:
-            continue
-        row_values = list(raw_row)
-        if all(item is None or str(item).strip() == "" for item in row_values):
-            continue
-
-        date_raw = _require_value(row_values, fieldnames, field_map["date"], "date")
-        description_raw = _require_value(row_values, fieldnames, field_map["description"], "description")
-        type_raw = _get_optional_value(row_values, fieldnames, field_map.get("type"))
-
-        amount = resolve_amount(row_values, fieldnames, field_map)
-        transactions.append(
-            NormalizedTransaction(
-                date=_parse_date(date_raw),
-                description=str(description_raw).strip(),
-                amount=amount,
-                type=_normalize_type(type_raw, amount),
-                document_number=documents[index] if documents else None,
-            )
-        )
+    with open_bounded_xlsx(raw_bytes) as (workbook, deadline):
+        iterator = iter_bounded_xlsx_rows(workbook, deadline)
+        preview_cells = list(islice(iterator, _HEADER_SCAN_LIMIT))
+        preview = [[cell.value for cell in row] for row in preview_cells]
+        header_row_index, fieldnames, field_map = _locate_header_row(preview, field_resolver, required)
+        document_column = fieldnames.index(field_map["document_number"]) if "document_number" in field_map else None
+        for cells in chain(preview_cells[header_row_index + 1:], iterator):
+            check_xlsx_deadline(deadline)
+            row_values = [cell.value for cell in cells]
+            if not row_values or all(item is None or str(item).strip() == "" for item in row_values):
+                continue
+            date_raw = _require_value(row_values, fieldnames, field_map["date"], "date")
+            description_raw = _require_value(row_values, fieldnames, field_map["description"], "description")
+            type_raw = _get_optional_value(row_values, fieldnames, field_map.get("type"))
+            amount = resolve_amount(row_values, fieldnames, field_map)
+            document = _document_number(cells[document_column]) if document_column is not None and document_column < len(cells) else None
+            transactions.append(NormalizedTransaction(
+                date=_parse_date(date_raw), description=str(description_raw).strip(), amount=amount,
+                type=_normalize_type(type_raw, amount), document_number=document,
+            ))
 
     if not transactions:
         raise InvalidFileContentError("XLSX does not contain transaction rows.")

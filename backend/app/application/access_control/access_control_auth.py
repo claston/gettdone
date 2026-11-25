@@ -104,7 +104,7 @@ class AccessControlAuthComponent:
             user_id=user_id,
             email=normalized_email,
             name=name.strip(),
-            token=self._service._encode_token(user_id),
+            token=self._service._encode_token(user_id) if email_verification_status == "verified" else "",
             is_admin=is_admin,
             is_active=True,
             email_verification_status=email_verification_status,

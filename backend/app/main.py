@@ -152,6 +152,10 @@ async def security_headers_middleware(request: Request, call_next):
     else:
         response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
+    if request.url.path.startswith(("/auth/", "/admin/", "/client/", "/report/", "/convert-report/",
+                                    "/reconcile-report/", "/api/")) or request.url.path in {"/convert", "/reconcile"}:
+        if "no-store" not in response.headers.get("Cache-Control", "").lower():
+            response.headers["Cache-Control"] = "private, no-store"
     if request.url.path in {"/primeiro-acesso.html", "/pagamento.html", "/auth/initial-access", "/checkout/payment-page"}:
         response.headers["Cache-Control"] = "no-store"
     if is_production_env():

@@ -1,3 +1,4 @@
+import hashlib
 import sqlite3
 import sys
 from collections.abc import Iterator
@@ -24,6 +25,29 @@ from app.application.report_service import ReportService  # noqa: E402
 from app.application.storage_service import TempAnalysisStorage  # noqa: E402
 
 TEST_PASSWORD_HASH_ITERATIONS = 1
+
+
+def _close_default_test_access_control():
+    service = dependencies_module._access_control_service
+    close = getattr(service, "close", None)
+    if callable(close):
+        close()
+    # Configuration-only doubles may have no connection lifecycle.
+    dependencies_module._access_control_service = None
+
+
+@pytest.fixture(autouse=True)
+def _isolate_default_access_control_runtime(request, tmp_path_factory, monkeypatch):
+    """Public budgets persist across instances, but unrelated tests are separate users/runtimes."""
+    _close_default_test_access_control()
+    test_key = hashlib.sha256(request.node.nodeid.encode()).hexdigest()[:16]
+    state_dir = tmp_path_factory.getbasetemp() / "default-access-control" / test_key
+    monkeypatch.setenv("ACCESS_CONTROL_STATE_DIR", str(state_dir))
+    monkeypatch.setattr(dependencies_module, "_access_control_service", None)
+    try:
+        yield
+    finally:
+        _close_default_test_access_control()
 
 
 @pytest.fixture(scope="session", autouse=True)
