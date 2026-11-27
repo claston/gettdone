@@ -1,8 +1,62 @@
 ﻿(function () {
   const LEGACY_STORAGE_KEY = 'ofx_privacy_preferences_v1';
   const COOKIE_NAME = 'ofx_privacy_preferences_v1';
-  const POLICY_VERSION = '2026-05-15';
+  const POLICY_VERSION = '2026-11-27';
   const GTM_ID = 'GTM-KXD6TMPC';
+  const ANALYTICS_COOKIE = 'ofx_analytics_id';
+  let lastPage = null;
+
+  function analyticsCookie(value, maxAge) {
+    const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `${ANALYTICS_COOKIE}=${value}; Path=/; Max-Age=${maxAge}; SameSite=Lax${secure}`;
+  }
+
+  function analyticsPage() {
+    const path = window.location.pathname;
+    const pages = ['/', '/index.html', '/planos.html', '/checkout.html', '/client-area.html',
+      '/login.html', '/signup.html', '/ofx-convert.html', '/convert.html', '/conciliador.html',
+      '/ofx-landing.html', '/converter-pdf-para-ofx.html', '/converter-pdf-para-excel.html',
+      '/curso-notas-explicativas.html', '/review', '/conversions', '/documents', '/financial', '/settings', '/login',
+      '/escritorio', '/works', '/dashboard', '/reconciliation', '/clients', '/periods', '/account'];
+    if (pages.includes(path)) return path;
+    for (const prefix of ['/conversions/', '/documents/', '/blog/', '/review/', '/client-review/', '/works/', '/financial/']) {
+      if (path.startsWith(prefix)) return prefix + ':id';
+    }
+    return '/other';
+  }
+
+  function capture(eventType) {
+    try {
+      const prefs = readPrefs();
+      if (!prefs || prefs.analytics !== true) return;
+      if (!['page_view', 'upload_started', 'preview_viewed', 'quota_notice_viewed'].includes(eventType)) return;
+      const cookie = document.cookie.split(';').map(value => value.trim()).find(value => value.startsWith(ANALYTICS_COOKIE + '='));
+      if (!cookie || !/^[0-9a-f-]{36}$/i.test(cookie.split('=')[1])) {
+        analyticsCookie(window.crypto.randomUUID(), 15552000);
+      }
+      const base = window.OfxSession ? window.OfxSession.apiBase : '';
+      void window.fetch(base + '/telemetry/analytics', {
+        method: 'POST', credentials: 'include', keepalive: true,
+        headers: Object.assign({ 'Content-Type': 'application/json' },
+          document.documentElement.dataset.ofxSurface === 'pro' ? { 'X-OFX-Pro-Client': 'web' } : {}),
+        body: JSON.stringify({ event_type: eventType, page_path: analyticsPage() })
+      }).catch(function () {});
+    } catch (_) {
+      // Optional analytics must never interrupt conversion or navigation.
+    }
+  }
+
+  function pageView() {
+    const prefs = readPrefs();
+    // Compare routes locally; capture() sends only their normalized category.
+    const page = window.location.pathname;
+    if (prefs && prefs.analytics === true && page !== lastPage) {
+      lastPage = page;
+      capture('page_view');
+    }
+  }
+
+  window.OfxAnalytics = Object.freeze({ capture: capture, pageView: pageView });
 
   function readPrefs() {
     const entries = String(document.cookie || '').split(';');
@@ -61,8 +115,14 @@
   }
 
   function applyPrefs(prefs) {
-    if (shouldLoadGtm(prefs)) {
+    if (shouldLoadGtm(prefs) && document.documentElement.dataset.ofxSurface !== 'pro') {
       loadGtm();
+    }
+    if (!prefs || prefs.analytics !== true) {
+      analyticsCookie('', 0);
+      lastPage = null;
+    } else {
+      pageView();
     }
   }
 
@@ -103,7 +163,7 @@
     });
 
     card.querySelector('#privacy-reject').addEventListener('click', function () {
-      savePrefs({ analytics: false, marketing: false });
+      applyPrefs(savePrefs({ analytics: false, marketing: false }));
       close();
     });
   }
@@ -133,7 +193,7 @@
     });
 
     banner.querySelector('#privacy-deny').addEventListener('click', function () {
-      savePrefs({ analytics: false, marketing: false });
+      applyPrefs(savePrefs({ analytics: false, marketing: false }));
       remove();
     });
 

@@ -5,6 +5,7 @@ export interface BackendProxyRewrite {
 
 const workspaceRoutes = [
   "/telemetry/events",
+  "/telemetry/analytics",
   "/api/conversion-runtime",
   "/api/pro/conversion-options",
   "/api/pro/conversion-batches/:path*",

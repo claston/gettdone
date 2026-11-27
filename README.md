@@ -6,6 +6,49 @@ Fundacao inicial do projeto com:
 - `frontend/` estatico (`HTML + JavaScript`)
 - docs de especificacao e backlog em `doc/`
 
+## Analytics de produto (PostHog)
+
+O backend envia eventos explícitos ao projeto OFX Simples no PostHog Cloud US usando a API pública de captura
+(`https://posthog.com/docs/api/capture`). Não há SDK remoto no navegador, autocapture ou gravação de sessões.
+`httpx`, já usado pela aplicação, faz o envio depois da resposta HTTP. O token de coleta é público e está em
+`backend/app/posthog_analytics.py`; não é uma chave pessoal de acesso ao painel.
+
+- Ativo por padrão somente com `APP_ENV=production`. `POSTHOG_ENABLED=false` desliga os envios imediatamente
+  após reiniciar o serviço. `POSTHOG_PROJECT_TOKEN` permite usar outro projeto em homologação; não reutilize o
+  projeto de produção para a suíte de testes. Nenhuma migration ou importação de histórico é necessária.
+- Cada requisição precisa trazer a preferência `analytics: true` e um UUID de analytics criado após o aceite.
+  Recusar remove esse cookie e impede novos eventos; sair da conta também remove o identificador. Requisições
+  já iniciadas podem concluir o envio. Eventos anteriores não são apagados por revogar o consentimento.
+- O site e o PRO usam o mesmo código de preferências. No PRO, `prebuild`/`predev` copiam esse arquivo para `public`.
+  Mantenha `NEXT_PUBLIC_API_URL=/` e o proxy de backend configurado, para encaminhar os cookies pelo mesmo domínio.
+  As preferências são por domínio. Eventos autenticados existentes vinculam a navegação consentida a um ID de
+  usuário pseudonimizado, sem nome/e-mail; anônimos em domínios diferentes não são automaticamente a mesma pessoa.
+- Enviamos somente páginas normalizadas (sem consultas ou identificadores), superfície `site`/`pro`, códigos de
+  plano permitidos e formato de download. Nunca enviar documentos, nomes de arquivos, valores, contas ou texto de
+  transações. Os registros operacionais existentes continuam no banco, independentemente desse envio opcional.
+
+Eventos disponíveis: `page_view`; `upload_started` no conversor PDF e no envio de lotes PRO; `preview_viewed` no
+conversor PDF (inclusive ao reabrir a prévia); `quota_notice_viewed` quando uma tentativa é bloqueada na interface
+do conversor PDF; e os eventos existentes de planos, checkout, curso, revisão PRO e `download` registrados pelo
+servidor. `upload_started` mede a tentativa de envio, não o recebimento completo. `download` mede solicitação
+autorizada, não uso do arquivo. `preview_viewed` não comprova qualidade financeira nem conclusão de todo um lote.
+Não há captura de pagamento confirmado, receita, UTM ou conclusão dos workers nesta primeira integração.
+
+Depois do deploy, aceitar analytics em uma sessão de teste e verificar os eventos no painel PostHog. Criar:
+
+1. Funil do conversor PDF: `page_view` (filtrar a página do conversor) → `upload_started` → `preview_viewed` →
+   `download`, janela de 1 dia. Contar pessoas, considerando que o funil não garante o mesmo documento.
+2. Interesse comercial: `plans_view` → `plan_cta_click` → `checkout_view`, janela de 7 dias, segmentado por plano.
+   Não nomear esse último passo como compra; ele mede entrada no checkout.
+3. Retenção: `download` inicial e um novo `download` nas semanas/meses seguintes. Medida de retorno para solicitar
+   arquivos, com cobertura restrita aos visitantes que permitiram analytics.
+
+O token de coleta não permite criar/consultar esses painéis pela API; a configuração é feita na conta PostHog.
+O envio tem timeout de 2 segundos, limite de 8 envios simultâneos por processo e até 16 eventos por requisição.
+Falhas não interrompem o produto e geram `posthog_delivery_failed`/`posthog_capacity_drop`, sem dados dos usuários.
+Não há fila durável ou reenvio: os dados podem ter perdas e não substituem os registros operacionais.
+Rollback: desabilitar `POSTHOG_ENABLED` ou reverter o commit, sem migração de banco.
+
 ## Estrutura
 
 ```text

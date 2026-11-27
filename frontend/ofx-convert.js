@@ -2602,6 +2602,7 @@
 
     setStatus("Sessão restaurada. Você pode continuar o download.", "success");
     showConversionFeedback();
+    globalThis.OfxAnalytics?.capture('preview_viewed');
   }
 
   async function postConvert(formData, options) {
@@ -2825,6 +2826,7 @@
     setDownloadButtonsDisabled(!state.analysisId);
     persistCurrentViewState();
     showConversionFeedback();
+    globalThis.OfxAnalytics?.capture('preview_viewed');
   }
 
   function renderConversionFeedback(message) {
@@ -3283,6 +3285,7 @@
 
   async function runConvert() {
     if (isQuotaLocked()) {
+      globalThis.OfxAnalytics?.capture('quota_notice_viewed');
       setStatus("Limite semanal atingido. Crie sua conta para continuar.", "error");
       return;
     }
@@ -3303,6 +3306,7 @@
       setStatus(`Selecione no máximo ${state.conversionRuntime.batchMaxFiles} arquivos por lote.`, "error");
       return;
     }
+    globalThis.OfxAnalytics?.capture('upload_started');
     if (state.conversionRuntime.directBatchEnabled) {
       return runAsyncBatchConvert(files);
     }

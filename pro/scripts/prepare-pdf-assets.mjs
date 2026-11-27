@@ -3,6 +3,11 @@ import { createRequire } from "node:module";
 import path from "node:path";
 
 const require = createRequire(import.meta.url);
+mkdirSync(path.resolve("public"), { recursive: true });
+cpSync(
+  path.resolve("..", "frontend", "privacy-consent.js"),
+  path.resolve("public", "privacy-consent.js"),
+);
 const source = path.dirname(require.resolve("pdfjs-dist/package.json"));
 const { version } = JSON.parse(
   readFileSync(path.join(source, "package.json"), "utf8"),
