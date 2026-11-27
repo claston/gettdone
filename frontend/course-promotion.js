@@ -105,20 +105,20 @@
       panel.id = "course-promotion";
       panel.className = "course-promotion hidden";
       panel.setAttribute("aria-labelledby", "course-promotion-title");
-      const illustration = document.createElement("img");
-      illustration.className = "course-promotion-image";
-      illustration.src = "/assets/course-accounting-v1.png";
-      illustration.alt = "";
-      illustration.width = 112;
-      illustration.height = 112;
-      illustration.decoding = "async";
+      const portrait = document.createElement("img");
+      portrait.className = "course-promotion-image";
+      portrait.src = "/assets/laudelino-jochem-v1.png";
+      portrait.alt = "Professor Laudelino Jochem";
+      portrait.width = 112;
+      portrait.height = 112;
+      portrait.decoding = "async";
       const content = document.createElement("div");
       content.className = "course-promotion-content";
       const title = document.createElement("h3");
       title.id = "course-promotion-title";
       title.textContent = "Você prepara balanços e notas explicativas para clientes?";
       const description = document.createElement("p");
-      description.textContent = "Conheça o curso da Descomplicont sobre a estrutura das demonstrações e o conteúdo das notas explicativas.";
+      description.textContent = "Conheça o curso da Descomplicont com o professor Laudelino Jochem.";
       const link = document.createElement("a");
       link.className = "btn btn-secondary";
       link.href = `${COURSE_PATH}?from=conversao`;
@@ -127,7 +127,7 @@
       link.textContent = "Ver programa do curso";
       trackLink(link, "course_cta_click", window.location.pathname, recordVisibleImpression);
       content.append(title, description, link);
-      panel.append(illustration, content);
+      panel.append(portrait, content);
       container.appendChild(panel);
     }
     panel.classList.remove("hidden");
