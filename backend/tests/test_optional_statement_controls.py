@@ -176,7 +176,9 @@ def test_multiple_months_without_openings_preserve_pages_and_require_review(repr
 
 
 @pytest.mark.real_http
-def test_optional_controls_http_preserves_movements_and_export_balance_limits(tmp_path):
+def test_optional_controls_http_preserves_movements_and_export_balance_limits(tmp_path, monkeypatch):
+    # This case exercises financial behavior / identity quota under an explicit network budget.
+    monkeypatch.setenv("PUBLIC_CONVERSION_NETWORK_LIMIT", "100")
     from tests.ocr_conversion_http_helpers import public_client
 
     cases = [('cards.pdf', grid_pdf([ascending_cards()]), [50, -50, 20, -5]),

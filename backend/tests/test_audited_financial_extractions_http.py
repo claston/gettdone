@@ -10,6 +10,8 @@ pytestmark = pytest.mark.real_http
 
 
 def test_audited_reports_keep_semantics_through_storage_and_exports(tmp_path, monkeypatch):
+    # This case exercises financial behavior / identity quota under an explicit network budget.
+    monkeypatch.setenv("PUBLIC_CONVERSION_NETWORK_LIMIT", "100")
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")
     monkeypatch.setenv("PDF_OCR_ENABLED", "false")
 

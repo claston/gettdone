@@ -543,7 +543,9 @@ def build_client_with_textract_analyze(state_dir: Path) -> tuple[TestClient, Acc
     return TestClient(app), access_control
 
 
-def test_convert_anonymous_quota_and_block_4th_attempt() -> None:
+def test_convert_anonymous_quota_and_block_4th_attempt(monkeypatch) -> None:
+    # This case exercises financial behavior / identity quota under an explicit network budget.
+    monkeypatch.setenv("PUBLIC_CONVERSION_NETWORK_LIMIT", "100")
     state_dir = Path(mkdtemp(prefix="convert-auth-api-"))
     client, _service = build_client(state_dir)
 

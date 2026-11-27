@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from app.application.black_friday import CODES
 from app.application.errors import InvalidUserTokenError
+from app.application.safe_redirect import safe_next_path
 
 if TYPE_CHECKING:
     from app.application.access_control import AccessControlService, IdentityContext
@@ -251,7 +252,4 @@ class AccessControlIdentityComponent:
         return f"afp_{secrets.token_urlsafe(24)}"
 
     def normalize_next_path(self, next_path: str | None) -> str:
-        raw = str(next_path or "").strip()
-        if not raw.startswith("/"):
-            return "/client-area.html"
-        return raw
+        return safe_next_path(next_path)

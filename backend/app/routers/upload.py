@@ -3,7 +3,7 @@ import logging
 from functools import partial
 from pathlib import Path
 
-from fastapi import APIRouter, Cookie, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Cookie, Depends, File, Form, Header, HTTPException, Request, UploadFile
 
 from app.api.conversion.conversion_error_mapper import _raise_http_convert_error
 from app.api.conversion.conversion_response_mapper import _result_to_convert_response
@@ -44,6 +44,7 @@ from app.routers.auth_session import (
     SESSION_ACCESS_COOKIE_NAME,
     resolve_anonymous_fingerprint_with_cookie,
 )
+from app.routers.public_request_security import enforce_upload_budget
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -184,6 +185,8 @@ async def _handle_conversion_upload_json(
         )
         pending_lease = None
         return await asyncio.wrap_future(conversion_future)
+    except HTTPException:
+        raise
     except Exception as exc:
         _raise_http_convert_error(exc, identity=identity, access_control_service=access_control_service)
         raise
@@ -195,6 +198,7 @@ async def _handle_conversion_upload_json(
 
 @router.post("/convert", response_model=ConvertResponse)
 async def convert(
+    request: Request,
     file: UploadFile = File(...),
     anonymous_fingerprint: str | None = Form(default=None),
     user_token: str | None = Form(default=None),
@@ -215,6 +219,8 @@ async def convert(
     staged_upload: _StagedUpload | None = None
     pending_lease: ConversionCapacityLease | None = capacity_lease
     try:
+        enforce_upload_budget(access_control_service, request, authorization=authorization,
+                              user_token=user_token, access_cookie_token=access_cookie_token)
         staged_upload = await _stage_upload_to_temp_file(file)
         scanned_likely, total_pages = _inspect_pdf_scan_likely_from_path(file.filename or "", staged_upload.path)
         conversion_future = capacity_controller.submit(
@@ -234,6 +240,8 @@ async def convert(
         )
         pending_lease = None
         return await asyncio.wrap_future(conversion_future)
+    except HTTPException:
+        raise
     except Exception as exc:
         _raise_http_convert_error(exc, identity=identity, access_control_service=access_control_service)
         raise
@@ -245,6 +253,7 @@ async def convert(
 
 @router.post("/api/conversions/upload")
 async def conversion_upload_stream(
+    request: Request,
     file: UploadFile = File(...),
     anonymous_fingerprint: str | None = Form(default=None),
     user_token: str | None = Form(default=None),
@@ -268,11 +277,16 @@ async def conversion_upload_stream(
         source="/api/conversions/upload",
     )
     try:
+        enforce_upload_budget(access_control_service, request, authorization=authorization,
+                              user_token=user_token, access_cookie_token=access_cookie_token)
         staged_upload = await _stage_upload_to_temp_file(file)
         logger.info(
             "conversion_upload_read_complete size_bytes=%s",
             staged_upload.size_bytes,
         )
+    except HTTPException:
+        capacity_lease.release(outcome="request_rejected")
+        raise
     except Exception as exc:
         capacity_lease.release(outcome="staging_failed")
         if not wants_sse:

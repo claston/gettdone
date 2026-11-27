@@ -36,7 +36,10 @@ from app.schemas import (
 
 
 @pytest.fixture(autouse=True)
-def _isolate_sse_lifespan_and_require_capacity_release():
+def _isolate_sse_lifespan_and_require_capacity_release(monkeypatch):
+    # These presentation tests use an auth double without storage. Persistent
+    # request budgets are exercised with real services in the security HTTP tests.
+    monkeypatch.setattr("app.routers.upload.enforce_upload_budget", lambda *args, **kwargs: None)
     # Each client previously reused a process-global slot without a lifespan.
     # A completed stream can arrive just before its worker releases that slot.
     # Await the real release and assert it, rather than relaxing capacity limits.

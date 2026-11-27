@@ -2,6 +2,12 @@ name: CD | Deploy to Render (Staging)
 
 on:
   workflow_dispatch:
+    inputs:
+      revoke_legacy_tokens:
+        description: Revoke old user credentials in the API database without deploying
+        type: boolean
+        required: false
+        default: false
   workflow_run:
     workflows:
       - CD | Publish Container (GHCR)
@@ -9,15 +15,37 @@ on:
       - completed
 
 concurrency:
-  group: deploy-render-staging
-  cancel-in-progress: true
+  group: ${{ inputs.revoke_legacy_tokens && 'revoke-legacy-tokens' || 'deploy-render-staging' }}
+  cancel-in-progress: ${{ !inputs.revoke_legacy_tokens }}
 
 permissions:
   contents: read
 
 jobs:
+  revoke-legacy-tokens:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.revoke_legacy_tokens }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: staging
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install database driver
+        run: |
+          python -m pip install --only-binary=:all: 'psycopg[binary]==3.2.9'
+      - name: Preview, revoke and verify old credentials
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_SCHEMA: ${{ vars.DATABASE_SCHEMA || 'public' }}
+        run: |
+          python backend/scripts/revoke_legacy_tokens.py
+          python backend/scripts/revoke_legacy_tokens.py --apply
+          python backend/scripts/revoke_legacy_tokens.py
+
   db-migrate-staging:
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
+    if: ${{ !inputs.revoke_legacy_tokens && (github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')) }}
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -54,7 +82,7 @@ jobs:
           python scripts/run_alembic_migrations.py
 
   deploy-render-staging:
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
+    if: ${{ !inputs.revoke_legacy_tokens && (github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')) }}
     needs:
       - db-migrate-staging
     runs-on: ubuntu-latest

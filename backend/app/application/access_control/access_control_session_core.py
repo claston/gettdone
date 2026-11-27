@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import json
+from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -100,7 +101,7 @@ class AccessControlSessionCoreComponent:
             ),
         )
         return self._service._session_token_bundle_factory(
-            user=user,
+            user=replace(user, token=access_token),
             access_token=access_token,
             refresh_token=refresh_token,
             access_expires_at=access_expires_at.isoformat(),
@@ -146,7 +147,7 @@ class AccessControlSessionCoreComponent:
             user_id=str(row["id"]),
             email=str(row["email"]),
             name=str(row["name"] or ""),
-            token=self._service._encode_token(str(row["id"])),
+            token="",
             is_admin=self._service._row_is_admin(row),
             is_active=True,
             email_verification_status=str(row["email_verification_status"] or "verified"),

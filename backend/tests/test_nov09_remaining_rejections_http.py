@@ -12,6 +12,8 @@ pytestmark = pytest.mark.real_http
 
 
 def test_recovered_documents_keep_rows_review_and_subaccounts_over_http(tmp_path, monkeypatch):
+    # This case exercises financial behavior / identity quota under an explicit network budget.
+    monkeypatch.setenv("PUBLIC_CONVERSION_NETWORK_LIMIT", "100")
     monkeypatch.setenv("TEXTRACT_ENABLED", "false")
     monkeypatch.setenv("PDF_OCR_ENABLED", "false")
     wise = [line.replace("30,00 1.380,00", "30,00 1.381,00") for line in wise_lines()]

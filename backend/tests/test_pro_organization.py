@@ -39,7 +39,7 @@ def test_catalog_is_private_persistent_and_periods_do_not_require_clients(organi
 
 def test_conversion_context_is_independent_versioned_and_does_not_charge_quota(organization):
     service, owner, other, access = organization
-    identity = access.resolve_identity(user_token=access.get_user_by_id(owner).token, anonymous_fingerprint=None)
+    identity = access.resolve_identity(user_token=access.create_user_session(user_id=owner).access_token, anonymous_fingerprint=None)
     remaining = access.get_remaining_quota(identity)
     first = service.save_period(owner, name="Semana", start_date=date(2026, 10, 1), end_date=date(2026, 10, 7))
     second = service.save_period(owner, name="Quinzena", start_date=date(2026, 10, 1), end_date=date(2026, 10, 15))

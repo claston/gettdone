@@ -3,7 +3,7 @@ from functools import partial
 from io import BytesIO
 from pathlib import Path
 
-from fastapi import APIRouter, Cookie, Depends, File, Form, Header, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Cookie, Depends, File, Form, Header, HTTPException, Request, Response, UploadFile
 
 from app.application import (
     AccessControlService,
@@ -32,6 +32,7 @@ from app.routers.auth_session import (
     resolve_anonymous_fingerprint_with_cookie,
     resolve_user_token_with_session,
 )
+from app.routers.public_request_security import enforce_public_request
 from app.schemas import ReconcileIntakeResponse
 
 router = APIRouter()
@@ -59,6 +60,7 @@ def _file_extension(filename: str | None) -> str:
 
 @router.post("/reconcile", response_model=ReconcileIntakeResponse)
 async def reconcile(
+    request: Request,
     response: Response,
     bank_file: UploadFile = File(...),
     sheet_file: UploadFile = File(...),
@@ -93,6 +95,7 @@ async def reconcile(
                             headers={"Retry-After": str(capacity.retry_after_seconds)})
     submitted = False
     try:
+        enforce_public_request(access_control_service, request, kind="conversion", identity=identity)
         limit = min(RECONCILE_MAX_FILE_BYTES, identity.max_upload_size_bytes)
         # PDF type is determined by preflight after a bounded read. Native PDFs
         # may use the shared 10 MiB allowance even for a 5 MiB identity.

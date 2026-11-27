@@ -128,7 +128,7 @@ def test_pro_session_login_requires_the_pro_header_and_allowed_origin(monkeypatc
         shutil.rmtree(state_dir, ignore_errors=True)
 
 
-def test_legacy_token_can_be_migrated_once_to_http_only_cookie_session() -> None:
+def test_retired_migration_endpoint_does_not_issue_new_sessions() -> None:
     state_dir = Path(mkdtemp(prefix="auth-session-api-"))
     client, _service = _build_client(state_dir)
     try:
@@ -148,13 +148,11 @@ def test_legacy_token_can_be_migrated_once_to_http_only_cookie_session() -> None
             headers={"Authorization": f"Bearer {legacy_token}"},
         )
 
-        assert migrated.status_code == 200
-        assert "user_token" not in migrated.json()
-        assert migrated.cookies.get(SESSION_ACCESS_COOKIE_NAME)
-        assert migrated.cookies.get(SESSION_REFRESH_COOKIE_NAME)
-        assert "httponly" in migrated.headers.get("set-cookie", "").lower()
+        assert migrated.status_code == 410
+        assert not migrated.cookies
 
-        me = client.get("/auth/me")
+        assert client.get("/auth/me").status_code == 401
+        me = client.get("/auth/me", headers={"Authorization": f"Bearer {legacy_token}"})
         assert me.status_code == 200
         assert me.json()["email"] == "erica@example.com"
     finally:
@@ -167,7 +165,7 @@ def test_legacy_session_migration_rejects_missing_token() -> None:
     client, _service = _build_client(state_dir)
     try:
         response = client.post("/auth/session/migrate")
-        assert response.status_code == 401
+        assert response.status_code == 410
     finally:
         app.dependency_overrides.clear()
         shutil.rmtree(state_dir, ignore_errors=True)

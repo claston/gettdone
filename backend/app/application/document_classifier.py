@@ -4,13 +4,14 @@ import csv
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from io import BytesIO, StringIO
+from itertools import islice
 from pathlib import Path
 from typing import Any
 
-from openpyxl import load_workbook
 from pypdf import PdfReader
 
 from app.application.parsers.column_mapping import normalize_header
+from app.application.xlsx_safety import iter_bounded_xlsx_rows, open_bounded_xlsx
 
 _PREVIEW_LIMIT = 20
 _MAX_EVIDENCE = 6
@@ -338,34 +339,11 @@ def _build_csv_profile(filename_normalized: str, raw_bytes: bytes, extension: st
 
 
 def _build_xlsx_profile(filename_normalized: str, raw_bytes: bytes, extension: str) -> _DocumentProfile:
-    try:
-        workbook = load_workbook(filename=BytesIO(raw_bytes), data_only=True, read_only=True)
-    except Exception:
-        return _DocumentProfile(
-            filename_normalized=filename_normalized,
-            header_text="",
-            body_text="",
-            row_count=0,
-            has_headers=False,
-            extension=extension,
-            sample_rows=[],
-        )
-
-    if not workbook.worksheets:
-        return _DocumentProfile(
-            filename_normalized=filename_normalized,
-            header_text="",
-            body_text="",
-            row_count=0,
-            has_headers=False,
-            extension=extension,
-            sample_rows=[],
-        )
-
-    rows = [
-        ["" if value is None else str(value) for value in row]
-        for row in workbook.worksheets[0].iter_rows(values_only=True)
-    ][: _PREVIEW_LIMIT]
+    with open_bounded_xlsx(raw_bytes) as (workbook, deadline):
+        rows = [
+            ["" if cell.value is None else str(cell.value) for cell in row]
+            for row in islice(iter_bounded_xlsx_rows(workbook, deadline), _PREVIEW_LIMIT)
+        ]
     header = rows[0] if rows else []
     body_rows = rows[1:] if len(rows) > 1 else []
     return _DocumentProfile(

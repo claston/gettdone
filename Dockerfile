@@ -28,6 +28,11 @@ COPY backend/scripts/run_alembic_migrations.py ./backend/scripts/run_alembic_mig
 COPY frontend ./frontend
 COPY marketing/templates/ofx-content-series/campaign.json marketing/templates/ofx-content-series/01-organizacao.html marketing/templates/ofx-content-series/01-organizacao.txt ./marketing/templates/ofx-content-series/
 
+RUN groupadd --gid 10001 app && useradd --uid 10001 --gid app --no-create-home app \
+    && mkdir -p /app/backend/tmp /app/backend/data \
+    && chown -R app:app /app/backend/tmp /app/backend/data
+USER 10001:10001
+
 EXPOSE 8000
 
 WORKDIR /app/backend

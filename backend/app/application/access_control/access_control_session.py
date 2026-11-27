@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+from dataclasses import replace
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -201,4 +202,7 @@ class AccessControlSessionComponent:
                 refresh_expires_at = self._service._parse_usage_datetime(str(row["expires_at"] or ""), fallback=now)
                 if refresh_expires_at <= now:
                     raise InvalidSessionTokenError
-                return self._service._get_registered_user_by_id_with_conn(conn=conn, user_id=user_id)
+                return replace(
+                    self._service._get_registered_user_by_id_with_conn(conn=conn, user_id=user_id),
+                    token=access_token,
+                )

@@ -72,7 +72,7 @@ def test_checkout_freezes_promotional_price_and_can_release_after_campaign(campa
     assert intent["billing_period"] == OFFERS[code][3]
     clock[0] = END + timedelta(days=1)
     assert PurchaseFlow(service).release(intent["id"], actor_kind="system", actor_user_id=None)
-    identity = service.resolve_identity(None, user.token)
+    identity = service.resolve_identity(None, service.create_user_session(user_id=user.user_id).access_token)
     assert identity.plan_code == code
     assert identity.quota_limit == OFFERS[code][2]
     assert not PurchaseFlow(service).release(intent["id"], actor_kind="system", actor_user_id=None)
@@ -83,7 +83,7 @@ def test_three_months_monthly_quota_expiration_and_no_accumulation(campaign):
     user = service.register_user(name="Cliente", email="black@example.test", password="safe-password")
     intent = order(service, "black_friday_3_meses", user)
     PurchaseFlow(service).release(intent["id"], actor_kind="system", actor_user_id=None)
-    identity = service.resolve_identity(None, user.token)
+    identity = service.resolve_identity(None, service.create_user_session(user_id=user.user_id).access_token)
     service.consume_quota(identity, consumed_units=1000)
     with pytest.raises(QuotaExceededError):
         service.ensure_quota_available(identity)
@@ -98,23 +98,24 @@ def test_three_months_monthly_quota_expiration_and_no_accumulation(campaign):
     assert service.get_quota_reset_at(identity) == "2027-02-23T03:00:00+00:00"
     # Populate the active-plan cache just before expiry, then cross its boundary.
     clock[0] = datetime(2027, 2, 23, 3, tzinfo=timezone.utc) - timedelta(microseconds=1)
-    assert service.resolve_identity(None, user.token).plan_code == "black_friday_3_meses"
+    renewed_token = service.create_user_session(user_id=user.user_id).access_token
+    assert service.resolve_identity(None, renewed_token).plan_code == "black_friday_3_meses"
     clock[0] += timedelta(microseconds=1)
-    assert service.resolve_identity(None, user.token).plan_code is None
+    assert service.resolve_identity(None, service.create_user_session(user_id=user.user_id).access_token).plan_code is None
 
 
 def test_monthly_black_and_existing_subscription_survive_campaign(campaign):
     service, clock = campaign
     existing = service.register_user(name="Existente", email="old@example.test", password="safe-password")
     service.activate_user_plan(user_id=existing.user_id, plan_code="essencial")
-    original = service.resolve_identity(None, existing.token)
+    original = service.resolve_identity(None, service.create_user_session(user_id=existing.user_id).access_token)
     black = service.register_user(name="Black", email="black@example.test", password="safe-password")
     intent = order(service, "essencial_black", black)
     PurchaseFlow(service).release(intent["id"], actor_kind="system", actor_user_id=None)
     clock[0] = datetime(2028, 1, 1, tzinfo=timezone.utc)
-    assert service.resolve_identity(None, existing.token) == original
-    assert service.resolve_identity(None, black.token).quota_limit == 600
-    assert service.resolve_identity(None, black.token).plan_code == "essencial_black"
+    assert service.resolve_identity(None, service.create_user_session(user_id=existing.user_id).access_token) == original
+    assert service.resolve_identity(None, service.create_user_session(user_id=black.user_id).access_token).quota_limit == 600
+    assert service.resolve_identity(None, service.create_user_session(user_id=black.user_id).access_token).plan_code == "essencial_black"
 
 
 def test_http_cache_cannot_cross_campaign_boundary(campaign):
@@ -152,7 +153,7 @@ def test_paid_conversion_eligibility_is_preserved(campaign, code):
     service, _ = campaign
     user = service.register_user(name="Cliente", email="black@example.test", password="safe-password")
     service.activate_user_plan(user_id=user.user_id, plan_code=code)
-    identity = service.resolve_identity(None, user.token)
+    identity = service.resolve_identity(None, service.create_user_session(user_id=user.user_id).access_token)
     assert ConversionProQuota(service, ProConversionPolicy(enabled=True)).eligible(identity)
 
 
@@ -165,4 +166,4 @@ def test_stop_sales_preserves_existing_black_contracts(campaign, monkeypatch):
     assert not set(OFFERS).intersection(plan["code"] for plan in service.list_public_plans())
     with pytest.raises(ValueError, match="23/11"):
         order(service, "essencial_black")
-    assert service.resolve_identity(None, user.token).quota_limit == 1000
+    assert service.resolve_identity(None, service.create_user_session(user_id=user.user_id).access_token).quota_limit == 1000

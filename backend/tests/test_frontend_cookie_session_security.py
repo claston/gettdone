@@ -67,14 +67,14 @@ def test_session_pages_load_cookie_session_client_before_page_script() -> None:
         assert page_script_index > session_index, relative_path
 
 
-def test_session_client_only_reads_legacy_token_for_one_way_migration() -> None:
+def test_session_client_removes_retired_credentials_without_migration() -> None:
     source = (FRONTEND_DIR / "auth-session.js").read_text(encoding="utf-8")
 
-    assert "/auth/session/migrate" in source
+    assert "/auth/session/migrate" not in source
     assert "/auth/session/refresh" in source
     assert 'credentials: "include"' in source
     assert "localStorage.setItem" not in source
-    assert source.count("localStorage.getItem") == 1
+    assert "localStorage.getItem" not in source
     assert "localStorage.removeItem" in source
 
 

@@ -223,7 +223,8 @@ def test_client_area_counts_unique_registered_visitors_in_selected_period(tmp_pa
         ):
             clock["now"] = visited_at
             service.record_product_event(
-                identity=service.resolve_identity(anonymous_fingerprint=None, user_token=user.token),
+                identity=service.resolve_identity(anonymous_fingerprint=None,
+                                                  user_token=service.create_user_session(user_id=user.user_id).access_token),
                 event_type="client_area_view",
             )
         clock["now"] = current_time

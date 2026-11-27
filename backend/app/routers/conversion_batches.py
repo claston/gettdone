@@ -53,6 +53,7 @@ from app.routers.auth_session import (
 )
 from app.routers.canonical_pro import canonical_display_record, export_canonical_record, resolve_canonical, validate_export_checks
 from app.routers.pro_security import require_pro_browser_request
+from app.routers.public_request_security import enforce_public_request
 from app.routers.workspace_refresh import unchanged_workspace
 
 router = APIRouter()
@@ -230,6 +231,10 @@ def create_conversion_batch(
         files_count=len(request.files),
     )
     files = [ConversionBatchFile(**item.model_dump()) for item in request.files]
+    enforce_public_request(
+        access_control_service, http_request, kind="conversion", identity=identity, units=len(files),
+        operation_id=f"{identity.identity_id}:{idempotency_key}",
+    )
     mode_options = {}
     if _is_pro_batch_request(http_request):
         mode_options['product'] = 'pro'
