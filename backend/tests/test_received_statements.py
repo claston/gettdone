@@ -4,12 +4,24 @@ from types import SimpleNamespace
 import pytest
 
 from app.application import AccessControlService
+from app.application import received_statements as received_statements_module
 from app.application.received_statements import ReceivedStatements
 from app.application.statement_identity import identify_statement
 
+RECEIVED_AT = datetime(2026, 10, 28, 12, tzinfo=timezone.utc)
+
 
 @pytest.fixture
-def receipts(tmp_path):
+def receipts(tmp_path, monkeypatch):
+    # Keep service defaults on the same clock as the synthetic records. Explicit
+    # `now` arguments still exercise retention boundaries and expired documents.
+    class ReceiptDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            current = RECEIVED_AT.astimezone(tz)
+            return current if tz is not None else current.replace(tzinfo=None)
+
+    monkeypatch.setattr(received_statements_module, "datetime", ReceiptDatetime)
     access = AccessControlService(state_file=tmp_path / "access.json", token_secret="receipts-test")
     owner = access.register_user(name="Owner", email="receipts@example.test", password="strong-password")
     other = access.register_user(name="Other", email="other-receipts@example.test", password="strong-password")
@@ -20,7 +32,7 @@ def receipts(tmp_path):
 
 
 def record(owner, job="job_a", batch="batch_a", days=1, source=None):
-    now = datetime(2026, 10, 28, 12, tzinfo=timezone.utc)
+    now = RECEIVED_AT
     return SimpleNamespace(
         job=SimpleNamespace(job_id=job, batch_id=batch, identity=SimpleNamespace(identity_type="user", identity_id=owner),
                             document=SimpleNamespace(filename=f"{job}.pdf")),
