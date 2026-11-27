@@ -8,9 +8,8 @@ disponível e nenhum envio de e-mail foi habilitado por esta alteração.
 
 - Nas três páginas que usam `ofx-convert.js`, um resultado gratuito concluído
   apresenta “Você prepara balanços e notas explicativas para clientes?”, a descrição
-  “Conheça o curso da Descomplicont sobre a estrutura das demonstrações e o conteúdo
-  das notas explicativas.” e o botão “Ver programa do curso”, com uma ilustração
-  decorativa de documentos contábeis abaixo das conversões restantes,
+  “Conheça o curso da Descomplicont com o professor Laudelino Jochem.” e o botão
+  “Ver programa do curso”, com a foto do professor abaixo das conversões restantes,
   à esquerda dos downloads no desktop e acima
   deles no celular, sem divisor ou legenda sob o botão. O link abre a página
   interna em outra aba.
@@ -18,8 +17,10 @@ disponível e nenhum envio de e-mail foi habilitado por esta alteração.
   deve ser `conversion`; se houver conta, o plano atual também deve ser gratuito.
   Planos pagos e o aplicativo PRO não recebem essa chamada.
 - A página explica que é um curso da Descomplicont, com Laudelino Jochem, e
-  informa a possibilidade de comissão. Não anuncia preço, desconto ou pontos
-  profissionais. Conteúdo conferido em <https://descomplicont.com/dcne-2023>.
+  informa a possibilidade de comissão. O cartão de saída reúne foto, nome e
+  formação do professor junto do botão. No celular, ele aparece antes do texto
+  complementar. Não anuncia preço, desconto ou pontos profissionais. Conteúdo
+  conferido em <https://descomplicont.com/dcne-2023>.
 - Downloads continuam diretos. O CTA não altera arquivos, cotas ou resultados.
   A pesquisa substituída não registra impressões, mantendo seu histórico intacto.
 
@@ -61,12 +62,38 @@ vendas. Os eventos e códigos de origem existentes são preservados, sem
 apagar o histórico ou enviar atributos novos à API. Não há monitoramento
 agendado ou resultado pós-publicação disponível nesta alteração.
 
-### Ilustração
+### Foto do professor
 
-`frontend/assets/course-accounting-v1.png` é uma ilustração decorativa original
+`frontend/assets/laudelino-jochem-v1.png` é a foto de Laudelino Jochem publicada
+na seção “Professor Laudelino Jochem” da
+[página oficial do curso](https://descomplicont.com/dcne-2023), consultada em
+27/11/2026. O mesmo perfil confirma que ele é contador e especialista em
+Contabilidade e Finanças pela UFPR, informações exibidas na página intermediária.
+Não são apresentados cargos atuais, números de alunos ou promessas de resultado.
+
+[Arquivo original da foto](https://rockfunnelsliveincluster.blob.core.windows.net/tenants/UKDGrVH0e0iLNJyTJHNQA/images/3aBEP8k4UGpOQSuv1zlwQ.png).
+A cópia local preserva o PNG original de 636 × 746 px, sem geração ou alteração
+da pessoa. O navegador carrega a foto do próprio OFX Simples. O recorte visual
+das fotos é feito por CSS; os atributos de dimensão reservam espaço e o texto
+alternativo identifica o professor. Nome, formação e links permanecem em HTML
+na página intermediária e continuam disponíveis se a imagem não carregar ou
+o JavaScript estiver desativado.
+
+A revisão usa os mesmos eventos, códigos de origem e critérios de elegibilidade.
+Pode ser publicada a partir da `main`, antes da PR #635, sem depender de suas
+alterações de autenticação. As versões do CSS e do script foram incrementadas
+nas páginas consumidoras. Publicar o PNG junto dos arquivos de frontend.
+Para desfazer apenas esta apresentação, reverter o commit e publicar novamente
+o frontend; não é necessário alterar backend, banco ou eventos históricos.
+
+### Ilustração anterior
+
+`frontend/assets/course-accounting-v1.png`, preservada para compatibilidade com
+páginas antigas em cache, é uma ilustração decorativa original
 gerada com a ferramenta integrada `image_gen`, dimensionada para 336 × 336 px
 para servir até três vezes o tamanho de exibição no desktop. Não é a capa
-oficial do curso. O texto da oferta permanece em HTML e a imagem tem `alt=""`
+oficial do curso. Na apresentação anterior, o texto da oferta permanecia em HTML
+e a imagem tinha `alt=""`
 para não repetir a informação no leitor de tela. Largura e altura reservam
 espaço antes do carregamento.
 
