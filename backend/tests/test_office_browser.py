@@ -80,7 +80,7 @@ def test_client_month_select_preview_and_download_current_package(database, tmp_
         expect(page.locator('#privacy-consent-banner')).to_be_hidden()
         page.get_by_role('button', name='Entrega', exact=True).click(timeout=60000)
         expect(page.get_by_role('button', name='Conferir pacote (0)')).to_be_visible(timeout=60000)
-        expect(page.get_by_label('Mês de trabalho')).to_have_value('2026-04')
+        expect(page.get_by_label('Mês de trabalho')).to_have_text('Abril de 2026')
         page.get_by_role('checkbox', name='Selecionar test.csv para o pacote').check()
         page.get_by_role('button', name='Conferir pacote (1)').click()
         download = page.get_by_role('button', name='Baixar pacote ZIP')

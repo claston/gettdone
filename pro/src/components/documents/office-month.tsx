@@ -1,8 +1,9 @@
 "use client";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { documentsService, type DocumentItem } from "@/data/documents-service";
+import { MonthFilter } from "./month-filter";
+import styles from "./month-filter.module.css";
 
 export function useOfficeMonth(month: string, attempt: number) {
   const [state, setState] = useState<{
@@ -57,22 +58,15 @@ export function OfficeMonthFilter({ month }: { month: string }) {
   const router = useRouter();
   return (
     <div>
-      <label>
-        Mês de trabalho{" "}
-        <input
-          type="month"
-          value={month === "unknown" ? "" : month}
-          onChange={(event) =>
-            router.push(
-              `/dashboard?month=${encodeURIComponent(event.target.value)}`,
-            )
-          }
-        />
-      </label>{" "}
-      <Link href="/dashboard?month=unknown">Período a confirmar</Link>
-      {" · "}
-      <Link href="/dashboard">Todos os meses</Link>
-      <p>
+      <MonthFilter
+        month={month}
+        onChange={(value) =>
+          router.push(`/dashboard?month=${encodeURIComponent(value)}`)
+        }
+        allHref="/dashboard"
+        unknownHref="/dashboard?month=unknown"
+      />
+      <p className={styles.hint}>
         O mês organiza documentos pelas datas identificadas. Não comprova que o
         mês está completo.
       </p>
