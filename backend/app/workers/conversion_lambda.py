@@ -260,6 +260,8 @@ def lambda_handler(event, context):
 
 
 def build_lambda_processor() -> ConversionLambdaProcessor:
+    from app.adapters.conversion.document_retention import analysis_retention_resolver
+
     database_url = _required_env("DATABASE_URL")
     bucket = _required_env("CONVERSION_S3_BUCKET")
     region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
@@ -282,6 +284,7 @@ def build_lambda_processor() -> ConversionLambdaProcessor:
     analysis_storage = S3AnalysisStorage(
         root_dir=Path("/tmp/gettdone/analyses"),
         ttl_seconds=int(os.getenv("ANALYSIS_TTL_SECONDS", "86400")),
+        retention_resolver=analysis_retention_resolver(database_url, database_schema),
         bucket=bucket,
         prefix=os.getenv("CONVERSION_RESULTS_S3_PREFIX", "conversion/results"),
         region=region,

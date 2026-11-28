@@ -25,7 +25,11 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { reviewReturnTo } from "@/domain/review-return";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ImportPreparationPanel,
+  useImportPreparation,
+} from "./import-preparation";
 
 import { useOptionalProSession } from "@/components/pro-session-gate";
 import { emitWorkspaceEvent } from "@/domain/workspace-events";
@@ -369,18 +373,32 @@ export function WorkspaceScreen({
 }: WorkspaceScreenProps) {
   const session = useOptionalProSession();
   const activeRepository = repository ?? resolveWorkspaceRepository(dataMode);
+  const preparationMode =
+    dataMode === "api" &&
+    !clientMode &&
+    reviewReturnTo(returnTo).startsWith("/documents");
+  const suggestedClient =
+    new URL(reviewReturnTo(returnTo), "https://local.invalid").searchParams.get(
+      "client",
+    ) ?? "";
   const reviewBasePath = clientMode
     ? "/client-review"
     : dataMode === "demo"
       ? "/demo/review"
       : "/review";
+  const preservedConversionHref = useCallback(
+    (id: string) =>
+      conversionHref?.(id) ??
+      `${reviewBasePath}/${encodeURIComponent(batchId)}/${encodeURIComponent(id)}${returnTo ? `?return_to=${encodeURIComponent(reviewReturnTo(returnTo))}` : ""}`,
+    [batchId, conversionHref, returnTo, reviewBasePath],
+  );
   const controller = useWorkspaceController(
     batchId,
     activeRepository,
     initialConversionId,
     reviewBasePath,
     pollIntervalMs,
-    conversionHref,
+    preservedConversionHref,
   );
   const [navigatorCollapsed, setNavigatorCollapsed] = useState(false);
   const [focusMode, setFocusMode] = useState(true);
@@ -406,6 +424,26 @@ export function WorkspaceScreen({
       emitWorkspaceEvent(activeRepository, "suspicious_filter_used");
   }, [transactionFilter, activeRepository]);
   const activeConversion = controller.activeConversion;
+  const preparationKey =
+    activeConversion &&
+    ["READY", "NEEDS_REVIEW", "REVIEWED", "EXPORTED"].includes(
+      activeConversion.status,
+    )
+      ? `${activeConversion.id}:${activeConversion.documentType ?? ""}`
+      : "";
+  const preparation = useImportPreparation(
+    preparationMode,
+    preparationKey,
+    suggestedClient,
+  );
+  const readOnly = preparationMode && preparation.policy?.read_only === true;
+  const confirmReview = useCallback(
+    () =>
+      controller.markReviewed(
+        preparationMode ? preparation.confirmContext : undefined,
+      ),
+    [controller, preparationMode, preparation.confirmContext],
+  );
   const activeNavigation = useMemo(() => {
     if (
       !activeConversion ||
@@ -478,10 +516,11 @@ export function WorkspaceScreen({
               '.transactions-panel input[aria-invalid="true"]',
             )
           )
-            void controller.markReviewed();
+            void confirmReview();
         }, 0);
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+        if (readOnly) return;
         if (
           (event.target as HTMLElement).matches(
             "input, textarea, [contenteditable=true]",
@@ -494,7 +533,7 @@ export function WorkspaceScreen({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [controller, marking]);
+  }, [controller, marking, readOnly, confirmReview]);
 
   if (controller.loadState === "LOADING") {
     return (
@@ -709,15 +748,22 @@ export function WorkspaceScreen({
           </button>
           <button
             className="primary-button"
-            onClick={() => void controller.markReviewed()}
+            onClick={() => void confirmReview()}
             disabled={
               !activeConversion ||
               busy ||
+              (preparationMode &&
+                (!preparation.data ||
+                  preparation.data.job_id !== activeConversion.id ||
+                  !preparation.draft?.client_id ||
+                  preparation.policy?.read_only ||
+                  preparation.busy)) ||
               !canReview ||
               !["READY", "NEEDS_REVIEW"].includes(activeConversion.status)
             }
           >
-            <CheckCircle2 size={16} /> Marcar revisado
+            <CheckCircle2 size={16} />{" "}
+            {preparationMode ? "Confirmar e próximo" : "Marcar revisado"}
           </button>
         </div>
       </header>
@@ -726,9 +772,16 @@ export function WorkspaceScreen({
         {batch.conversions.length > 0 &&
           reviewed === batch.conversions.length && (
             <div className="workspace-complete" role="status">
-              {clientMode
-                ? "Revisão dos extratos concluída. Você já pode exportar os arquivos."
-                : "Revisão do lote concluída. Você já pode exportar os arquivos."}
+              {preparationMode ? (
+                <>
+                  Importação revisada.{" "}
+                  <Link href={reviewReturnTo(returnTo)}>Preparar entrega</Link>
+                </>
+              ) : clientMode ? (
+                "Revisão dos extratos concluída. Você já pode exportar os arquivos."
+              ) : (
+                "Revisão do lote concluída. Você já pode exportar os arquivos."
+              )}
             </div>
           )}
         {controller.exportError && (
@@ -747,7 +800,11 @@ export function WorkspaceScreen({
             <span>{controller.actionError}</span>
             <button
               className="secondary-button small"
-              onClick={controller.retryAction}
+              onClick={() =>
+                controller.retryAction(
+                  preparationMode ? preparation.confirmContext : undefined,
+                )
+              }
             >
               Tentar ação novamente
             </button>
@@ -768,9 +825,12 @@ export function WorkspaceScreen({
           <DocumentTypeControl
             key={activeConversion.id}
             conversion={activeConversion}
-            disabled={busy}
+            disabled={busy || readOnly}
             onChange={controller.changeDocumentType}
           />
+        )}
+        {preparationMode && preparationKey && (
+          <ImportPreparationPanel preparation={preparation} disabled={busy} />
         )}
       </div>
       <div className="workspace-body" inert={busy}>
@@ -808,10 +868,11 @@ export function WorkspaceScreen({
               repository={activeRepository}
               navigation={activeNavigation}
               review={
-                activeConversion.financialDocument &&
-                ["bank_receipt", "fiscal_invoice"].includes(
-                  activeConversion.financialDocument.document_type,
-                )
+                readOnly ||
+                (activeConversion.financialDocument &&
+                  ["bank_receipt", "fiscal_invoice"].includes(
+                    activeConversion.financialDocument.document_type,
+                  ))
                   ? undefined
                   : {
                       transactions: filterTransactions(
@@ -1003,85 +1064,87 @@ export function WorkspaceScreen({
                 }}
               />
             ) : (
-              <TransactionGrid
-                key={`grid-${activeConversion.id}`}
-                conversion={activeConversion}
-                onUpdate={controller.updateField}
-                onAdd={controller.addTransaction}
-                onRemove={controller.removeTransaction}
-                onRestore={controller.restoreTransaction}
-                groupByPage={groupByPage}
-                onGroupChange={setGroupByPage}
-                filterValue={transactionFilter}
-                onFilterChange={(value) => {
-                  setTransactionFilter(value);
-                  setMarking(null);
-                  setMarkError(null);
-                  setReading(null);
-                }}
-                onSelectTransaction={(id, editing) =>
-                  selectPdfTransaction(id, undefined, editing)
-                }
-                onEditingChange={(editing) =>
-                  setEditingDocument(editing ? activeConversion.id : null)
-                }
-                syncPaused={Boolean(drawingFor)}
-                selectedFromPdf={activeNavigation?.origin === "pdf-selection"}
-                activePage={
-                  activeConversion.pdf &&
-                  (activeConversion.pdf.url.startsWith("/mock-statement") ||
-                    readyDocument ===
-                      `${activeConversion.id}:${activeConversion.pdf.url}`)
-                    ? (pages[activeConversion.id] ?? 1)
-                    : null
-                }
-                onLocateTransaction={(transactionId, options) => {
-                  setMarking(null);
-                  const transaction = activeConversion.transactions.find(
-                    (row) => row.id === transactionId,
-                  );
-                  const target = transaction && sourceLocation(transaction);
-                  if (!target) return;
-                  if (options?.scroll !== false)
+              <fieldset disabled={readOnly} style={{ display: "contents" }}>
+                <TransactionGrid
+                  key={`grid-${activeConversion.id}`}
+                  conversion={activeConversion}
+                  onUpdate={controller.updateField}
+                  onAdd={controller.addTransaction}
+                  onRemove={controller.removeTransaction}
+                  onRestore={controller.restoreTransaction}
+                  groupByPage={groupByPage}
+                  onGroupChange={setGroupByPage}
+                  filterValue={transactionFilter}
+                  onFilterChange={(value) => {
+                    setTransactionFilter(value);
+                    setMarking(null);
+                    setMarkError(null);
+                    setReading(null);
+                  }}
+                  onSelectTransaction={(id, editing) =>
+                    selectPdfTransaction(id, undefined, editing)
+                  }
+                  onEditingChange={(editing) =>
+                    setEditingDocument(editing ? activeConversion.id : null)
+                  }
+                  syncPaused={Boolean(drawingFor)}
+                  selectedFromPdf={activeNavigation?.origin === "pdf-selection"}
+                  activePage={
+                    activeConversion.pdf &&
+                    (activeConversion.pdf.url.startsWith("/mock-statement") ||
+                      readyDocument ===
+                        `${activeConversion.id}:${activeConversion.pdf.url}`)
+                      ? (pages[activeConversion.id] ?? 1)
+                      : null
+                  }
+                  onLocateTransaction={(transactionId, options) => {
+                    setMarking(null);
+                    const transaction = activeConversion.transactions.find(
+                      (row) => row.id === transactionId,
+                    );
+                    const target = transaction && sourceLocation(transaction);
+                    if (!target) return;
+                    if (options?.scroll !== false)
+                      setPages((current) => ({
+                        ...current,
+                        [activeConversion.id]: target.page,
+                      }));
+                    setNavigation((current) => ({
+                      ...target,
+                      ...options,
+                      origin: options?.origin ?? "grid",
+                      id: `${activeConversion.id}:${activeConversion.pdf?.url}`,
+                      token: (current?.token ?? 0) + 1,
+                    }));
+                  }}
+                  locatedTransactionId={activeNavigation?.transactionId}
+                  onClearSource={() => {
+                    setNavigation(null);
+                    setMarking(null);
+                  }}
+                  followPdf={activeNavigation?.origin !== "grid"}
+                  readingPosition={
+                    reading?.id ===
+                    `${activeConversion.id}:${activeConversion.pdf?.url}`
+                      ? reading
+                      : undefined
+                  }
+                  onSourcePage={(page) => {
+                    setMarking(null);
+                    setReading(null);
                     setPages((current) => ({
                       ...current,
-                      [activeConversion.id]: target.page,
+                      [activeConversion.id]: page,
                     }));
-                  setNavigation((current) => ({
-                    ...target,
-                    ...options,
-                    origin: options?.origin ?? "grid",
-                    id: `${activeConversion.id}:${activeConversion.pdf?.url}`,
-                    token: (current?.token ?? 0) + 1,
-                  }));
-                }}
-                locatedTransactionId={activeNavigation?.transactionId}
-                onClearSource={() => {
-                  setNavigation(null);
-                  setMarking(null);
-                }}
-                followPdf={activeNavigation?.origin !== "grid"}
-                readingPosition={
-                  reading?.id ===
-                  `${activeConversion.id}:${activeConversion.pdf?.url}`
-                    ? reading
-                    : undefined
-                }
-                onSourcePage={(page) => {
-                  setMarking(null);
-                  setReading(null);
-                  setPages((current) => ({
-                    ...current,
-                    [activeConversion.id]: page,
-                  }));
-                  setNavigation((current) => ({
-                    id: `${activeConversion.id}:${activeConversion.pdf?.url}`,
-                    page,
-                    regions: [],
-                    token: (current?.token ?? 0) + 1,
-                  }));
-                }}
-              />
+                    setNavigation((current) => ({
+                      id: `${activeConversion.id}:${activeConversion.pdf?.url}`,
+                      page,
+                      regions: [],
+                      token: (current?.token ?? 0) + 1,
+                    }));
+                  }}
+                />
+              </fieldset>
             )}
           </ReviewPanels>
         ) : (
@@ -1116,7 +1179,7 @@ export function WorkspaceScreen({
         <button
           className="footer-action"
           onClick={controller.undo}
-          disabled={busy || !controller.canUndo}
+          disabled={busy || readOnly || !controller.canUndo}
         >
           <Undo2 size={14} /> Desfazer
         </button>

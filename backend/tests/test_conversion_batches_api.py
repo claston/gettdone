@@ -117,6 +117,19 @@ class FakeDirectUploadService:
         return None
 
 
+@pytest.fixture(autouse=True)
+def current_entitlement_for_router_fakes(monkeypatch):
+    from app.application import document_retention
+    real_check = document_retention.can_edit_documents
+    def check(access, owner):
+        # Real PostgreSQL cancellation/cache behavior is covered over HTTP in
+        # test_document_conference; these router fakes have no database adapter.
+        if isinstance(access, FakeRegisteredAccessControlService):
+            return access.batch_conversion_enabled
+        return real_check(access, owner)
+    monkeypatch.setattr(document_retention, 'can_edit_documents', check)
+
+
 class FakeDocumentStore:
     def load(self, reference):
         return ingest_uploaded_document(

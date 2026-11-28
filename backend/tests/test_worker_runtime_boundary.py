@@ -216,6 +216,8 @@ sys.meta_path.insert(0, WorkerBoundary())
 os.environ["PRO_FISCAL_ENABLED"] = "true"
 from app.workers import conversion_lambda as worker
 from app.adapters.conversion import pro_fiscal_runtime as fiscal
+from app.workers import canonical_cleanup
+canonical_cleanup.worker_handler = lambda: {'expired_pro_documents_removed': 3, 'expired_analyses_removed': 1}
 calls = []
 fiscal.build_pro_fiscal_service = lambda: SimpleNamespace(
     complete_import=lambda identifier, parser: calls.append((identifier, parser)),
@@ -230,6 +232,7 @@ assert worker.lambda_handler(event, None) == {"batchItemFailures": []}
 assert calls == [(identifier, fiscal.extract_fiscal)]
 assert worker.lambda_handler({"action": "fiscal_maintenance"}, None) == {
     "fiscal_sources_removed": 1, "fiscal_messages_published": 2,
+    "expired_pro_documents_removed": 3, "expired_analyses_removed": 1,
 }
 assert "app.security_baseline" not in sys.modules
 print("Fiscal runtime passed")

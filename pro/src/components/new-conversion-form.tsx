@@ -126,7 +126,10 @@ export function NewConversionForm({
         setCreatedBatch(batchId);
         const query = new URLSearchParams({ batch: batchId });
         if (importContext.clientId) query.set("client", importContext.clientId);
-        router.push(`/documents?${query}`);
+        query.set("view", "delivery");
+        router.push(
+          `/review/${encodeURIComponent(batchId)}?return_to=${encodeURIComponent(`/documents?${query}`)}`,
+        );
         return;
       }
       if (context) {

@@ -126,7 +126,9 @@ def test_cross_owner_expiry_and_document_version_are_checked(database):
             scope.actor_id, scope.client_id, note, movement, amount="10.00", document_version=2, movement_version=1, operation_id="stale"
         )
     with service.repo._connect() as conn:
-        conn.execute(f"UPDATE {service.repo.p}pro_fiscal_documents SET expires_at=clock_timestamp()-interval '1 second'")
+        conn.execute(f"UPDATE {service.repo.p}user_plan_subscriptions "
+                     "SET status='ended',ended_at=(clock_timestamp()-interval '31 days')::text")
+    service.repo.test_access.activate_user_plan(user_id=scope.actor_id, plan_code='essencial')
     with pytest.raises(AnalysisNotFoundError):
         service.link(
             scope.actor_id, scope.client_id, note, movement, amount="10.00", document_version=1, movement_version=1, operation_id="expired"
@@ -315,8 +317,8 @@ def test_async_import_idempotency_routing_and_cleanup(database):
     assert result["summary"]["documented_sales"] == "100.00"
     service.complete_import(imported["id"], lambda *_: pytest.fail("must not reparse"))
     with service.repo._connect() as conn:
-        conn.execute(f"UPDATE {service.repo.p}pro_fiscal_imports SET expires_at=clock_timestamp()-interval '1 second'")
-        conn.execute(f"UPDATE {service.repo.p}pro_fiscal_documents SET expires_at=clock_timestamp()-interval '1 second'")
+        conn.execute(f"UPDATE {service.repo.p}user_plan_subscriptions "
+                     "SET status='ended',ended_at=(clock_timestamp()-interval '31 days')::text")
     assert service.cleanup() == 1
     assert not service.objects.data
 

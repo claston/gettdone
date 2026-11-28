@@ -34,6 +34,20 @@ def options(owner=Depends(organization_owner)):
     return {'enabled': True, 'max_package_files': 30, 'max_package_bytes': MAX_PACKAGE_BYTES}
 
 
+@router.get('/retention')
+def retention(owner=Depends(organization_owner), access=Depends(get_access_control_service)):
+    from app.application.black_friday import PAID_PLAN_CODES
+    from app.application.document_retention import NO_SCHEDULED_DELETION, read_retention
+    deadline = read_retention(access, owner)
+    with access.db.connect() as conn:
+        from app.application.active_plan_reader import read_active_user_plan
+        plan = read_active_user_plan(conn, fetchone=access.db.fetchone, user_id=owner)
+    can_edit = bool(plan and plan['batch_conversion_enabled'])
+    active = bool(can_edit and plan['code'] in PAID_PLAN_CODES)
+    return {'read_only': not can_edit, 'delete_after': deadline.isoformat() if deadline and deadline != NO_SCHEDULED_DELETION else None,
+            'retained_while_paid': active, 'grace_days': 30}
+
+
 def owned_record(batches, owner, job_id, *, allow_expired=False):
     if batches is None:
         raise HTTPException(503, 'Não foi possível consultar o documento. Tente novamente.')
@@ -90,7 +104,12 @@ def describe(record, context, reviews, owner):
     payload = record.result.payload if record.result else {}
     analysis = (payload or {}).get('analysis') or {}
     source = record_source(record, context)
-    verification = reviews.read(owner, record.job.job_id, source)
+    verification = reviews.read(owner, record.job.job_id, source, legacy_source=record_source(record, context, legacy=True))
+    reviewed = payload.get('reviewed_at')
+    # The converter is the import review. Do not request a second confirmation
+    # in the document list; a later manual attention decision still takes precedence.
+    if reviewed and (not verification['updated_at'] or verification['updated_at'] < reviewed):
+        verification = {**verification, 'status': 'verified', 'actor': owner, 'updated_at': reviewed}
     start, end = document_period(analysis)
     bank = analysis.get('financial_document') is None and analysis.get('document_type') in {
         'bank_statement', 'credit_card_statement', 'prepaid_card_statement', 'ofx_statement', 'financial_spreadsheet'}

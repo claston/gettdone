@@ -58,7 +58,7 @@ export interface WorkspaceController {
   actionError: string | null;
   actionBusy: boolean;
   retryLoad(): void;
-  retryAction(): void;
+  retryAction(prepareReview?: (conversionId: string) => Promise<number>): void;
   dismissExport(): void;
   selectConversion(id: string): void;
   updateField(
@@ -75,7 +75,9 @@ export interface WorkspaceController {
   restoreTransaction(transactionId: string): void;
   retrySave(): void;
   undo(): void;
-  markReviewed(): Promise<void>;
+  markReviewed(
+    prepareReview?: (conversionId: string) => Promise<number>,
+  ): Promise<void>;
   goToNextPending(): void;
   retryConversion(): Promise<void>;
   exportBatch(): Promise<void>;
@@ -118,6 +120,9 @@ export function useWorkspaceController(
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const lastPreparation = useRef<
+    ((conversionId: string) => Promise<number>) | undefined
+  >(undefined);
   const [actionBusy, setActionBusy] = useState(false);
   const actionLock = useRef(false);
   const lastAction = useRef<"review" | "retry">("review");
@@ -742,66 +747,71 @@ export function useWorkspaceController(
     [activeConversion, repository, refreshBatch],
   );
 
-  const markReviewed = useCallback(async () => {
-    if (
-      !activeConversion ||
-      actionLock.current ||
-      exportPromise.current ||
-      !["READY", "NEEDS_REVIEW"].includes(activeConversion.status)
-    )
-      return;
-    const status = saveStatusesRef.current[activeConversion.id] ?? "IDLE";
-    if (["DIRTY", "SAVING", "ERROR"].includes(status)) return;
-    actionLock.current = true;
-    lastAction.current = "review";
-    setActionBusy(true);
-    setActionError(null);
-    try {
-      await repository.markReviewed(activeConversion.id);
-      emitWorkspaceEvent(repository, "conversion_reviewed");
-      const current = batchRef.current;
-      if (current) {
-        const next: Batch = {
-          ...current,
-          conversions: current.conversions.map((item) =>
-            item.id === activeConversion.id
-              ? {
-                  ...item,
-                  downloadUrl: item.canonical
-                    ? (repository
-                        .getCachedBatch?.(batchId)
-                        ?.conversions.find((row) => row.id === item.id)
-                        ?.downloadUrl ?? item.downloadUrl)
-                    : item.downloadUrl,
-                  status: "REVIEWED",
-                  reviewStatus: "REVIEWED",
-                  suspectedCount: 0,
-                }
-              : item,
-          ),
-        };
-        batchRef.current = next;
-        setBatch(next);
-      }
-      const currentBatch = batchRef.current;
-      if (currentBatch) {
-        const next = nextPendingConversion(
-          currentBatch.conversions,
-          activeConversion.id,
+  const markReviewed = useCallback(
+    async (prepareReview?: (conversionId: string) => Promise<number>) => {
+      if (
+        !activeConversion ||
+        actionLock.current ||
+        exportPromise.current ||
+        !["READY", "NEEDS_REVIEW"].includes(activeConversion.status)
+      )
+        return;
+      const status = saveStatusesRef.current[activeConversion.id] ?? "IDLE";
+      if (["DIRTY", "SAVING", "ERROR"].includes(status)) return;
+      actionLock.current = true;
+      lastAction.current = "review";
+      lastPreparation.current = prepareReview;
+      setActionBusy(true);
+      setActionError(null);
+      try {
+        const contextVersion = await prepareReview?.(activeConversion.id);
+        await repository.markReviewed(activeConversion.id, contextVersion);
+        emitWorkspaceEvent(repository, "conversion_reviewed");
+        const current = batchRef.current;
+        if (current) {
+          const next: Batch = {
+            ...current,
+            conversions: current.conversions.map((item) =>
+              item.id === activeConversion.id
+                ? {
+                    ...item,
+                    downloadUrl: item.canonical
+                      ? (repository
+                          .getCachedBatch?.(batchId)
+                          ?.conversions.find((row) => row.id === item.id)
+                          ?.downloadUrl ?? item.downloadUrl)
+                      : item.downloadUrl,
+                    status: "REVIEWED",
+                    reviewStatus: "REVIEWED",
+                    suspectedCount: 0,
+                  }
+                : item,
+            ),
+          };
+          batchRef.current = next;
+          setBatch(next);
+        }
+        const currentBatch = batchRef.current;
+        if (currentBatch) {
+          const next = nextPendingConversion(
+            currentBatch.conversions,
+            activeConversion.id,
+          );
+          if (next) selectConversion(next.id);
+        }
+      } catch (error) {
+        setActionError(
+          error instanceof Error
+            ? error.message
+            : "Não foi possível confirmar a revisão.",
         );
-        if (next) selectConversion(next.id);
+      } finally {
+        actionLock.current = false;
+        setActionBusy(false);
       }
-    } catch (error) {
-      setActionError(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível confirmar a revisão.",
-      );
-    } finally {
-      actionLock.current = false;
-      setActionBusy(false);
-    }
-  }, [activeConversion, repository, selectConversion, batchId]);
+    },
+    [activeConversion, repository, selectConversion, batchId],
+  );
 
   const retryConversion = useCallback(async () => {
     if (
@@ -888,9 +898,14 @@ export function useWorkspaceController(
   }, [batchId, repository, flushSaves]);
 
   const retryLoad = useCallback(() => setLoadAttempt((value) => value + 1), []);
-  const retryAction = useCallback(() => {
-    void (lastAction.current === "review" ? markReviewed() : retryConversion());
-  }, [markReviewed, retryConversion]);
+  const retryAction = useCallback(
+    (prepareReview?: (conversionId: string) => Promise<number>) => {
+      void (lastAction.current === "review"
+        ? markReviewed(prepareReview ?? lastPreparation.current)
+        : retryConversion());
+    },
+    [markReviewed, retryConversion],
+  );
   const dismissExport = useCallback(() => {
     setExportState("IDLE");
     setExportResult(null);

@@ -35,6 +35,7 @@ from app.routers import (
 from app.routers.classification_shadow import router as classification_shadow_router
 from app.routers.conversion_pro import router as conversion_pro_router
 from app.routers.document_conference import router as document_conference_router
+from app.routers.document_preparation import router as document_preparation_router
 from app.routers.financial_center import router as financial_center_router
 from app.routers.marketing import router as marketing_router
 from app.routers.office_documents import router as office_documents_router
@@ -130,6 +131,7 @@ app.include_router(conversion_pro_router)
 app.include_router(pro_organization_router)
 app.include_router(pro_documents_router)
 app.include_router(office_documents_router)
+app.include_router(document_preparation_router)
 app.include_router(pro_conversions_router)
 app.include_router(statement_works_router)
 app.include_router(received_statements_router)

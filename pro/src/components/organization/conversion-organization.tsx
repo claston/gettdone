@@ -36,6 +36,7 @@ export function ConversionOrganization({
   onSelect,
   returnTo,
   documentMode = false,
+  embedded = false,
   onCatalogChanged = async () => {},
 }: {
   item: OrganizedConversion;
@@ -48,6 +49,7 @@ export function ConversionOrganization({
   onSelect?(checked: boolean): void;
   returnTo?: string;
   documentMode?: boolean;
+  embedded?: boolean;
   onCatalogChanged?(): Promise<void>;
 }) {
   const [draft, setDraft] = useState(item.context);
@@ -87,8 +89,9 @@ export function ConversionOrganization({
       setBusy(false);
     }
   };
+  const Container = embedded ? "div" : "article";
   return (
-    <article className={styles.conversion} aria-label={item.filename}>
+    <Container className={styles.conversion} aria-label={item.filename}>
       <div className={styles.conversionHeader}>
         <div>
           <h3>{item.filename}</h3>
@@ -312,6 +315,6 @@ export function ConversionOrganization({
           )}
         </div>
       )}
-    </article>
+    </Container>
   );
 }

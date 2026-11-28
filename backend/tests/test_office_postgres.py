@@ -97,5 +97,6 @@ def test_office_package_uses_canonical_edits_and_new_plan_expiration(database, t
     assert stale.value.status_code == 409
     office_commercial(**admin, operation_id='cancel', action='cancel', values=dict(user_id=scope.actor_id))
     from app.application.errors import AnalysisAccessDeniedError
+    assert canonical.resolve(scope.actor_id, scope.analysis_id) == scope
     with pytest.raises(AnalysisAccessDeniedError):
-        canonical.resolve(scope.actor_id, scope.analysis_id)
+        canonical.edit(scope, [], expected_version=saved['version']+1, operation_id='after-end')

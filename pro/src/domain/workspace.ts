@@ -179,7 +179,10 @@ export interface WorkspaceRepository {
     conversionId: string,
     transactions: Transaction[],
   ): Promise<Transaction[] | void>;
-  markReviewed(conversionId: string): Promise<void>;
+  markReviewed(
+    conversionId: string,
+    preparationContextVersion?: number,
+  ): Promise<void>;
   retryConversion(conversionId: string): Promise<void>;
   exportBatch(batchId: string): Promise<ExportResult>;
 }

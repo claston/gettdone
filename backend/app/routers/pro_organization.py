@@ -7,7 +7,7 @@ import re
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Response
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.application import AccessControlService, InvalidUserTokenError
@@ -23,6 +23,7 @@ router = APIRouter(prefix="/api/pro/organization", tags=["PRO organization"])
 
 
 def conversion_owner(
+    request: Request,
     response: Response,
     authorization: str | None = Header(default=None),
     access_cookie_token: str | None = Cookie(default=None, alias=SESSION_ACCESS_COOKIE_NAME),
@@ -37,7 +38,16 @@ def conversion_owner(
         identity = access.resolve_identity(anonymous_fingerprint=None, user_token=token)
     except InvalidUserTokenError:
         raise HTTPException(401, "Entre novamente na sua conta.") from None
-    if identity.identity_type != "user" or not identity.batch_conversion_enabled:
+    read_only = request.method in {"GET", "HEAD"} or request.url.path in {
+        "/api/pro/documents/package/preview", "/api/pro/documents/package/download"}
+    from app.application.document_retention import can_edit_documents
+    active = identity.identity_type == 'user' and can_edit_documents(access, identity.identity_id)
+    grace = False
+    if identity.identity_type == "user" and not active and read_only:
+        from app.application.document_retention import read_retention
+        deadline = read_retention(access, identity.identity_id)
+        grace = deadline is not None and deadline > datetime.now(timezone.utc)
+    if identity.identity_type != "user" or not (active or grace):
         raise HTTPException(403, "O acesso a clientes e documentos exige um plano PRO ativo.")
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["Vary"] = "Cookie, Authorization"

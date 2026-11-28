@@ -71,6 +71,14 @@ describe("Documentos", () => {
     const receipt = {
       ...file,
       category: "receipts" as const,
+      is_bank: false,
+      verification: {
+        status: "verified" as const,
+        version: 1,
+        actor: "owner",
+        updated_at: null,
+        document_type: null,
+      },
       context: { ...file.context, client_id: "client_a" },
     };
     render(
@@ -80,7 +88,9 @@ describe("Documentos", () => {
         financialCenterVisible
       />,
     );
-    expect(await screen.findByText("Conferência de movimentos")).toBeVisible();
+    expect(
+      await screen.findByRole("link", { name: "Revisar importação" }),
+    ).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "Conferir pacote (0)" }),
     ).not.toBeInTheDocument();
@@ -95,9 +105,9 @@ describe("Documentos", () => {
       screen.getByText("Conferência de movimentos: documento.pdf"),
     ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Entrega" }));
-    fireEvent.click(
+    expect(
       await screen.findByLabelText("Selecionar documento.pdf para o pacote"),
-    );
+    ).toBeChecked();
     fireEvent.click(screen.getByRole("button", { name: "Arquivos" }));
     fireEvent.click(screen.getByRole("button", { name: "Entrega" }));
     expect(
@@ -132,7 +142,7 @@ describe("Documentos", () => {
 
   it("oferece mês e pacote diretamente no PRO sem liberação adicional", async () => {
     render(<DocumentsPage {...services()} clientId="client_a" />);
-    await screen.findByRole("link", { name: "Abrir revisão" });
+    await screen.findByRole("link", { name: "Revisar importação" });
     expect(screen.getByLabelText("Mês de trabalho")).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "Conferir pacote (0)" }),
@@ -141,14 +151,14 @@ describe("Documentos", () => {
     expect(
       screen.getByRole("button", { name: "Conferir pacote (0)" }),
     ).toBeVisible();
-    fireEvent.click(
+    expect(
       screen.getByRole("checkbox", {
         name: "Selecionar documento.pdf para o pacote",
       }),
-    );
+    ).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Conferir pacote (1)" }),
-    ).toBeEnabled();
+      screen.getByRole("button", { name: "Conferir pacote (0)" }),
+    ).toBeDisabled();
   });
   it.each(["all", "invoices"] as const)(
     "usa a importação comum sem painel fiscal separado em %s",
@@ -160,7 +170,7 @@ describe("Documentos", () => {
           category={category}
         />,
       );
-      await screen.findByRole("link", { name: "Abrir revisão" });
+      await screen.findByRole("link", { name: "Revisar importação" });
       expect(screen.queryByText("Notas do cliente")).not.toBeInTheDocument();
       expect(
         screen.queryByRole("region", { name: "Notas fiscais importadas" }),
@@ -184,7 +194,7 @@ describe("Documentos", () => {
     expect(
       screen.getByRole("button", { name: "Importar documentos" }),
     ).toBeDisabled();
-    await screen.findByRole("link", { name: "Abrir revisão" });
+    await screen.findByRole("link", { name: "Revisar importação" });
     fireEvent.click(
       screen.getByRole("button", { name: "Importar documentos" }),
     );
@@ -234,7 +244,7 @@ describe("Documentos", () => {
       />,
     );
     expect(
-      await screen.findByRole("link", { name: "Abrir revisão" }),
+      await screen.findByRole("link", { name: "Revisar importação" }),
     ).toHaveAttribute(
       "href",
       "/review/batch_a/job_a?return_to=%2Fdocuments%3Fclient%3Dclient_a%26type%3Dstatements%26view%3Dfiles",
@@ -256,19 +266,15 @@ describe("Documentos", () => {
   it("exige confirmação e preserva a versão ao associar arquivos do envio", async () => {
     const props = services();
     render(<DocumentsPage {...props} clientId="client_a" batchId="batch_a" />);
-    const button = await screen.findByRole("button", {
-      name: "Confirmar associação ao cliente",
+    const link = await screen.findByRole("link", {
+      name: "Revisar importa\u00e7\u00e3o",
     });
-    expect(receivedService.confirm).not.toHaveBeenCalled();
-    fireEvent.click(button);
-    await waitFor(() =>
-      expect(receivedService.confirm).toHaveBeenCalledWith("job_a", {
-        client_id: "client_a",
-        name: "Cliente A",
-        tax_id: null,
-        expected_version: 0,
-      }),
+    expect(link).toHaveAttribute(
+      "href",
+      "/review/batch_a/job_a?return_to=%2Fdocuments%3Fclient%3Dclient_a%26batch%3Dbatch_a%26view%3Dfiles",
     );
+    expect(receivedService.confirm).not.toHaveBeenCalled();
+    expect(props.organization.organize).not.toHaveBeenCalled();
   });
   it("não exibe um documento expirado nem oferece associação ou revisão", async () => {
     const props = services([
@@ -285,7 +291,7 @@ describe("Documentos", () => {
       screen.queryByRole("button", { name: "Confirmar associação ao cliente" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("link", { name: "Abrir revisão" }),
+      screen.queryByRole("link", { name: "Revisar importação" }),
     ).not.toBeInTheDocument();
     expect(props.organization.organize).not.toHaveBeenCalled();
     expect(receivedService.confirm).not.toHaveBeenCalled();

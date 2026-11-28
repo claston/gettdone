@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.application.errors import AnalysisEditConflictError, AnalysisNotFoundError
-from app.application.office_documents import fingerprint
+from app.application.office_documents import fingerprint, source_payload
 from app.application.pro_fiscal_service import ProFiscalService
 
 
@@ -47,7 +47,9 @@ class DocumentConferenceService(ProFiscalService):
         kind = analysis.get("document_type")
         if kind not in {"bank_receipt", "fiscal_invoice", "support_document"}:
             raise ValueError("Confira o tipo do documento antes de relacioná-lo ao movimento.")
-        row["source"] = fingerprint([row["result_payload"], row["document"], row["context_version"], row["updated_at"]])
+        row['legacy_source'] = fingerprint([source_payload(row['result_payload'], legacy=True),
+                                            row['document'], row['context_version'], row['updated_at']])
+        row["source"] = fingerprint(['v2', source_payload(row['result_payload']), row['document'], row['context_version']])
         row["analysis"] = analysis
         return row
 
@@ -66,6 +68,50 @@ class DocumentConferenceService(ProFiscalService):
         with self.repo._connect() as conn:
             client = self._client(conn, actor, client_id)
             return self._evidence(self._job(conn, client, job_id))
+
+    def suggestions(self, actor, client_id, job_id, *, automatic=False):
+        from app.application.document_matching import document_evidence, document_matches
+        with self.repo._connect() as conn:
+            client = self._client(conn, actor, client_id)
+            document = self._job(conn, client, job_id)
+            financial = document['analysis'].get('financial_document') or {}
+            _, dates, _, _ = document_evidence(financial)
+            if not dates:
+                return {'source': document['source'], 'matches': [], 'partial': False}
+            from datetime import timedelta
+            rows = conn.execute(f"""SELECT m.id,m.version,m.amount,m.currency,m.description,m.attributes,
+                m.movement_date AS date FROM {self.repo.p}bank_movements m
+                JOIN {self.repo.p}canonical_analyses a ON a.analysis_id=m.analysis_id
+                JOIN {self.repo.p}conversion_jobs j ON j.job_id=a.job_id AND j.result_analysis_id=a.analysis_id
+                JOIN {self.repo.p}conversion_batches b ON b.batch_id=j.batch_id
+                JOIN {self.repo.p}pro_conversion_contexts x ON x.job_id=j.job_id AND x.organization_id=a.organization_id
+                WHERE m.organization_id=%s AND m.client_id=%s AND x.client_id=m.client_id
+                    AND a.read_enabled AND a.ui_enabled AND NOT m.is_deleted AND j.status='completed'
+                    AND j.identity->>'identity_type'='user' AND j.identity->>'identity_id'=%s
+                    AND b.identity_type='user' AND b.identity_id=%s
+                    AND LEAST(a.expires_at,j.expires_at,b.expires_at)>clock_timestamp()
+                    AND m.movement_date BETWEEN %s AND %s ORDER BY m.movement_date,m.id LIMIT 1001""",
+                (client['organization_id'], client_id, actor, actor, min(dates)-timedelta(days=3),
+                 max(dates)+timedelta(days=3))).fetchall()
+            movements = [{**row, 'id': str(row['id']), 'amount': str(row['amount']), 'date': row['date'].isoformat()} for row in rows]
+            matches = document_matches(financial, movements, complete=len(rows) <= 1000)
+            previous = conn.execute(f"""SELECT id,version,movement_id,movement_version,source,state
+                FROM {self.repo.p}pro_document_movement_links
+                WHERE organization_id=%s AND job_id=%s""", (client['organization_id'], job_id)).fetchall()
+        # A manual unlink is a decision. Never recreate it on a subsequent visit.
+        for match in matches:
+            prior = next((row for row in previous if str(row['movement_id']) == match['id']), None)
+            match['linked'] = bool(prior and prior['state'] == 'confirmed' and prior['source'] == document['source']
+                                   and prior['movement_version'] == match['version'])
+            match['link_id'] = prior['id'] if prior else None
+            match['link_version'] = prior['version'] if prior else None
+            if automatic and match['automatic'] and not previous:
+                linked = self.link_document(actor, client_id, match['id'], job_id=job_id, source=document['source'],
+                    movement_version=match['version'],
+                    operation_id='auto:' + fingerprint([job_id, document['source'], match['id'], match['version']]))
+                match['linked'] = True
+                match['link_id'], match['link_version'] = linked['id'], linked['version']
+        return {'source': document['source'], 'matches': matches[:10], 'partial': len(rows) > 1000 or len(matches) > 10}
 
     def movement_links(self, actor, client_id, movement_id):
         with self.repo._connect() as conn:
@@ -89,7 +135,7 @@ class DocumentConferenceService(ProFiscalService):
                     continue
                 expiries.append(expires)
                 links.append({"id": row["id"], "version": row["version"], "document": self._evidence(document),
-                              "state": "confirmed" if row["source"] == document["source"]
+                              "state": "confirmed" if row["source"] in {document["source"], document['legacy_source']}
                               and row["movement_version"] == movement["version"] else "review_required"})
             return {"links": links, "unavailable_links": unavailable, "partial": len(rows) > 100,
                     "access_expires_at": min(expiries).isoformat()}

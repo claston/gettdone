@@ -722,6 +722,10 @@ class DocumentConversionPipeline:
             }
         from app.application.statement_identity import identify_native_statement, identify_statement
 
+        storage = self.analysis_repository or getattr(self.report_service, 'storage', None)
+        if request.job.product == 'pro' and hasattr(storage, 'retain_pro_analysis'):
+            payload['analysis']['expires_at'] = storage.retain_pro_analysis(analysis.analysis_id, request.job.job_id)
+
         identity_pages = page_texts or ["\n".join(line.text for line in page.lines)
                                        for page in getattr(source_extraction, "pages", ())]
         if request.document.filename.lower().endswith(".pdf") and not effective_ocr_used:

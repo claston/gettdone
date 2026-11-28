@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { OfficeDocumentControls, OfficePackage } from "./office-controls";
+import { officeService, type RetentionPolicy } from "@/data/office-service";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
@@ -54,7 +55,11 @@ export function DocumentsPage({
   initialView?: "conference" | "files" | "delivery";
 }) {
   const router = useRouter();
-  const [selected, setSelected] = useState<string[]>([]);
+  const [manualSelection, setManualSelection] = useState<{
+    key: string;
+    ids: string[];
+  } | null>(null);
+  const [retention, setRetention] = useState<RetentionPolicy | null>(null);
   const [catalog, setCatalog] = useState<OrganizationCatalog | null>(null);
   const [catalogError, setCatalogError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -73,8 +78,7 @@ export function DocumentsPage({
   const scoped = Boolean(clientId && clientId !== "unassigned");
   const canConfer = scoped && financialCenterVisible && month !== "unknown";
   const [view, setView] = useState<"conference" | "files" | "delivery">(
-    initialView ??
-      (canConfer && !batchId && category === "all" ? "conference" : "files"),
+    initialView ?? "files",
   );
   const activeView = view === "conference" && !canConfer ? "files" : view;
   const [selectedDocument, setSelectedDocument] = useState("");
@@ -92,6 +96,22 @@ export function DocumentsPage({
   const key = request;
   const current = snapshot?.key === key ? snapshot : null;
   const items = useAvailableImports(current?.data?.items, documentAvailability);
+  const ready = (item: DocumentItem) =>
+    item.status === "completed" &&
+    item.context.client_id === clientId &&
+    !item.is_expired &&
+    (item.is_bank
+      ? item.bank_reviewed
+      : item.verification?.status === "verified");
+  const selected =
+    manualSelection?.key === key
+      ? manualSelection.ids
+      : items
+          .filter(ready)
+          .slice(0, 30)
+          .map((item) => item.job_id);
+  const setSelected = (update: (ids: string[]) => string[]) =>
+    setManualSelection({ key, ids: update(selected) });
   const returnTo = documentsUrl(
     clientId,
     category,
@@ -102,6 +122,17 @@ export function DocumentsPage({
   );
   const selectedFile =
     items.find((item) => item.job_id === selectedDocument) ?? items[0];
+
+  useEffect(() => {
+    const abort = new AbortController();
+    void officeService
+      .retention(abort.signal)
+      .then((value) => {
+        if (!abort.signal.aborted) setRetention(value);
+      })
+      .catch(() => {});
+    return () => abort.abort();
+  }, []);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -199,6 +230,14 @@ export function DocumentsPage({
   };
   return (
     <main className={`standard-page ${styles.page}`}>
+      {retention &&
+        (retention.retained_while_paid || retention.delete_after) && (
+          <p role="status" className={styles.notice}>
+            {retention.read_only
+              ? `Seu plano terminou. Consulte e baixe os documentos até ${new Date(retention.delete_after!).toLocaleDateString("pt-BR")}. Renove para voltar a importar e revisar.`
+              : "Seus documentos ficam guardados enquanto o plano estiver pago e por 30 dias após o término."}
+          </p>
+        )}
       {scoped && (
         <>
           <nav className={styles.breadcrumb} aria-label="Localização">
@@ -277,7 +316,7 @@ export function DocumentsPage({
           >
             {refreshing ? "Atualizando…" : "Atualizar"}
           </button>
-          {!upload && (
+          {!upload && !retention?.read_only && (
             <button
               className="primary-button"
               disabled={scoped && !client}
@@ -475,8 +514,9 @@ export function DocumentsPage({
                             type="checkbox"
                             checked={selected.includes(item.job_id)}
                             disabled={
-                              !selected.includes(item.job_id) &&
-                              selected.length >= 30
+                              !ready(item) ||
+                              (!selected.includes(item.job_id) &&
+                                selected.length >= 30)
                             }
                             onChange={(e) =>
                               setSelected((ids) =>
@@ -492,6 +532,25 @@ export function DocumentsPage({
                       <p className={styles.type}>
                         {item.filename} · {documentCategories[item.category]}
                       </p>
+                      {!ready(item) && (
+                        <p>
+                          Fora da entrega:{" "}
+                          {item.status !== "completed"
+                            ? "leitura ainda não concluída"
+                            : item.context.client_id !== clientId
+                              ? "cliente a confirmar"
+                              : "revisão da importação pendente"}
+                          .
+                          {item.review_url && (
+                            <Link
+                              href={`${item.review_url}?return_to=${encodeURIComponent(returnTo)}`}
+                            >
+                              {" "}
+                              Revisar importação
+                            </Link>
+                          )}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -574,6 +633,7 @@ export function DocumentsPage({
                         organization={organization}
                         client={batchId ? client : undefined}
                         returnTo={returnTo}
+                        readOnly={retention?.read_only}
                         onSaved={() => setAttempt((value) => value + 1)}
                       />
                     </div>
@@ -635,6 +695,7 @@ function DocumentRow({
   client,
   returnTo,
   onSaved,
+  readOnly = false,
 }: {
   item: DocumentItem;
   catalog: OrganizationCatalog | null;
@@ -642,98 +703,61 @@ function DocumentRow({
   client?: OrganizationClient;
   returnTo: string;
   onSaved(): void;
+  readOnly?: boolean;
 }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [expiredByClock, setExpiredByClock] = useState(
-    () => Date.parse(item.expires_at) <= Date.now(),
+  const expired = item.is_expired;
+  const assigned = catalog?.clients.find(
+    (value) => value.id === item.context.client_id,
   );
-  useEffect(() => {
-    const delay = Date.parse(item.expires_at) - Date.now();
-    if (!Number.isFinite(delay) || item.is_expired) return;
-    const timer = window.setTimeout(
-      () => setExpiredByClock(true),
-      Math.max(0, Math.min(delay, 2147483647)),
-    );
-    return () => window.clearTimeout(timer);
-  }, [item.expires_at, item.is_expired]);
-  const expired = item.is_expired || expiredByClock;
+  const account = catalog?.accounts.find(
+    (value) => value.id === item.context.account_id,
+  );
   return (
-    <div className={styles.document}>
+    <article className={styles.document} aria-label={item.filename}>
       <p className={styles.type}>{documentCategories[item.category]}</p>
-      <ConversionOrganization
-        item={
-          expired
-            ? { ...item, is_expired: true, review_url: null, status: "expired" }
-            : item.is_bank === false
-              ? { ...item, movement_start_date: null, movement_end_date: null }
-              : item
-        }
-        catalog={catalog ?? { clients: [], accounts: [], periods: [] }}
-        service={organization}
-        available={Boolean(catalog)}
-        showOrganization
-        documentMode
-        returnTo={returnTo}
-        onSaved={onSaved}
-        onCatalogChanged={async () => onSaved()}
-      />
+      <h3>{item.filename}</h3>
+      <p>
+        {assigned?.name ?? "Cliente a confirmar"}
+        {account ? ` · conta final ${account.account_number.slice(-4)}` : ""}
+      </p>
       {client &&
         item.context.client_id &&
         item.context.client_id !== client.id && (
           <p role="status">
-            Este arquivo está associado a outro cliente. Confira o titular antes
-            de alterar a associação em Organizar.
+            Este arquivo está associado a outro cliente. Confira o titular na
+            revisão da importação.
           </p>
         )}
-      {client &&
-        !item.context.client_id &&
-        !expired &&
-        item.review_url &&
-        item.status === "completed" && (
-          <div className={styles.notice}>
-            <p>
-              Confirme o titular no documento antes de associá-lo a este
-              cliente.
-            </p>
-            <button
-              className="secondary-button"
-              disabled={busy}
-              onClick={async () => {
-                if (busy) return;
-                setBusy(true);
-                setError("");
-                try {
-                  await receivedService.confirm(item.job_id, {
-                    client_id: client.id,
-                    name: client.name,
-                    tax_id: client.tax_id,
-                    expected_version: item.context.version,
-                  });
-                  onSaved();
-                } catch (caught) {
-                  setError(
-                    caught instanceof Error
-                      ? caught.message
-                      : "Não foi possível associar o documento.",
-                  );
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              {busy ? "Associando…" : "Confirmar associação ao cliente"}
-            </button>
-          </div>
-        )}
-      {!expired && (
-        <OfficeDocumentControls
-          key={`${item.source}:${item.verification?.version}`}
-          item={item}
-          onSaved={onSaved}
-        />
+      {!expired && item.review_url && (
+        <Link
+          className="primary-button"
+          href={`${item.review_url}?return_to=${encodeURIComponent(returnTo)}`}
+        >
+          {readOnly ? "Consultar documento" : "Revisar importação"}
+        </Link>
       )}
-      {error && <p role="alert">{error}</p>}
-    </div>
+      {!expired && (
+        <details>
+          <summary>Detalhes do documento</summary>
+          <ConversionOrganization
+            embedded
+            item={{ ...item, review_url: null }}
+            catalog={catalog ?? { clients: [], accounts: [], periods: [] }}
+            service={organization}
+            available={Boolean(catalog) && !readOnly}
+            showOrganization={!readOnly}
+            documentMode
+            onSaved={onSaved}
+            onCatalogChanged={async () => onSaved()}
+          />
+          <OfficeDocumentControls
+            key={`${item.source}:${item.verification?.version}`}
+            item={item}
+            onSaved={onSaved}
+            reviewInConverter
+          />
+        </details>
+      )}
+    </article>
   );
 }

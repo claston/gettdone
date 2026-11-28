@@ -20,9 +20,11 @@ const statuses: Record<VerificationStatus, string> = {
 export function OfficeDocumentControls({
   item,
   onSaved,
+  reviewInConverter = false,
 }: {
   item: DocumentItem;
   onSaved(): void;
+  reviewInConverter?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -54,7 +56,11 @@ export function OfficeDocumentControls({
   };
   return (
     <section aria-label={`Conferência de ${item.filename}`}>
-      <p>Disponível até {new Date(item.expires_at).toLocaleString("pt-BR")}.</p>
+      <p>
+        {item.expires_at?.startsWith("9999-")
+          ? "Guardado enquanto o plano estiver pago."
+          : `Disponível até ${new Date(item.expires_at).toLocaleString("pt-BR")}.`}
+      </p>
       {item.manual_association && <p>Cliente associado manualmente.</p>}
       {!item.movement_start_date && <p>Período a confirmar</p>}
       {!item.is_bank && item.movement_start_date && (
@@ -132,7 +138,7 @@ export function OfficeDocumentControls({
           ))}
         </div>
       ) : null}
-      {!item.is_bank && (
+      {!item.is_bank && !reviewInConverter && (
         <>
           <details>
             <summary>Corrigir tipo do documento</summary>

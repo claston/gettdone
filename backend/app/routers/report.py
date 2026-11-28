@@ -43,6 +43,17 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def require_retained_document_write(access, identity, analysis_id):
+    if identity.identity_type != 'user' or not access._use_postgres:
+        return
+    with access.db.connect() as conn:
+        retained = access.db.fetchone(conn, """SELECT 1 FROM conversion_jobs WHERE result_analysis_id=?
+            AND product='pro' AND identity->>'identity_id'=? LIMIT 1""", (analysis_id, identity.identity_id))
+    from app.application.document_retention import can_edit_documents
+    if retained and not can_edit_documents(access, identity.identity_id):
+        raise HTTPException(403, 'Renove seu plano para editar. Durante o prazo de retenção, você pode consultar e baixar os documentos.')
+
+
 @router.put("/conversion-feedback/{processing_id}")
 def put_conversion_feedback(
     processing_id: str,
@@ -136,7 +147,7 @@ def get_report(
         )
         report_path = service.get_report_path(analysis_id)
     except AnalysisEditConflictError:
-        canonical = resolve_canonical(identity, analysis_id)
+        canonical = resolve_canonical(identity, analysis_id, access=access_control_service)
         if canonical is None:
             raise HTTPException(409, "A análise aguarda a conclusão da revisão canônica.") from None
         data, version = canonical_bytes(canonical.canonical, canonical.scope, "report.xlsx")
@@ -283,6 +294,8 @@ def get_convert_report(
                                 "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}[file_format],
                                 headers={"Cache-Control": "private, no-store", "X-Analysis-Version": str(version),
                                          "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
+            if any(value is not None for value in (closing_balance, bank_branch, account_number, bank_code)):
+                require_retained_document_write(access_control_service, identity, processing_id)
             report_path = active_service.get_convert_report_path(
                 processing_id,
                 file_format=file_format,
@@ -404,6 +417,7 @@ def apply_convert_edits(
                 if result is None:
                     raise HTTPException(status_code=404, detail="Edit operation not found.")
                 return _edit_response(result)
+            require_retained_document_write(access_control_service, identity, processing_id)
             operation_options = {"operation_id": payload.operation_id} if payload.operation_id else {}
             if payload.document_type is not None:
                 if (not request.url.path.startswith('/api/pro/') or identity.identity_type != 'user'
@@ -486,7 +500,7 @@ def _select_convert_report_service(
             )
             return candidate
         except AnalysisEditConflictError:
-            canonical = resolve_canonical(identity, analysis_id)
+            canonical = resolve_canonical(identity, analysis_id, access=access_control_service)
             if canonical is not None:
                 return canonical
             raise
