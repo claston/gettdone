@@ -1,0 +1,175 @@
+.filter {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  min-width: 0;
+}
+.picker {
+  position: relative;
+  width: 260px;
+  max-width: 100%;
+}
+.label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-700);
+}
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 46px;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink-900);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgb(18 48 79 / 3%);
+}
+.trigger span {
+  flex: 1;
+}
+.trigger svg {
+  flex-shrink: 0;
+  color: var(--blue-700);
+}
+.trigger:hover,
+.trigger[aria-expanded="true"] {
+  border-color: var(--blue-600);
+}
+.filter :is(button, a, input):focus-visible {
+  outline: 2px solid var(--blue-600);
+  outline-offset: 3px;
+}
+.alternatives {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 2px;
+}
+.alternatives a {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--ink-700);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.alternatives a:hover {
+  background: var(--surface);
+  border-color: var(--line);
+}
+.alternatives a[aria-current="page"] {
+  background: var(--blue-100);
+  color: var(--blue-700);
+  border-color: #c4dafa;
+}
+.popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 300px;
+  max-width: calc(100vw - 40px);
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.year {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.year button,
+.months button {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-900);
+  font: inherit;
+  cursor: pointer;
+  min-height: 42px;
+}
+.year button {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  flex-shrink: 0;
+}
+.year input {
+  width: 96px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 600;
+  text-align: center;
+  appearance: textfield;
+}
+.year input::-webkit-inner-spin-button,
+.year input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+.months {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.months button {
+  padding: 10px 2px;
+  font-size: 12px;
+}
+.year button:hover:not(:disabled),
+.months button:hover:not(:disabled) {
+  background: var(--blue-50);
+  color: var(--blue-700);
+}
+.months button[aria-pressed="true"] {
+  background: var(--blue-700);
+  color: white;
+  font-weight: 600;
+}
+.filter button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.hint {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-700);
+}
+@media (max-width: 650px) {
+  .filter,
+  .picker {
+    width: 100%;
+  }
+  .filter {
+    gap: 8px;
+  }
+  .popover {
+    width: 100%;
+    max-width: 320px;
+  }
+  .alternatives {
+    gap: 4px;
+  }
+}

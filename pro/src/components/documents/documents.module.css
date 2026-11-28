@@ -106,6 +106,12 @@
   flex: 1;
   min-width: min(220px, 100%);
 }
+.workFilters {
+  align-items: flex-end;
+}
+.workFilters > label {
+  flex: 0 1 240px;
+}
 .breadcrumb {
   display: flex;
   flex-wrap: wrap;
@@ -214,7 +220,7 @@
   }
   .workFilters {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 12px;
   }
   .workFilters label {

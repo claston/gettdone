@@ -25,6 +25,7 @@ import {
 } from "../use-available-imports";
 import { NewConversionForm } from "../new-conversion-form";
 import { DocumentConference } from "./document-conference";
+import { MonthFilter } from "./month-filter";
 import conferenceStyles from "./conference.module.css";
 import styles from "./documents.module.css";
 import {
@@ -354,27 +355,21 @@ export function DocumentsPage({
             </select>
           </label>
         )}
-        <label>
-          Mês de trabalho{" "}
-          <input
-            type="month"
-            value={month === "unknown" ? "" : month}
-            onChange={(e) =>
-              router.push(
-                documentsUrl(
-                  clientId,
-                  category,
-                  batchId,
-                  e.target.value,
-                  accountId,
-                  activeView,
-                ),
-              )
-            }
-          />
-        </label>
-        <Link
-          href={documentsUrl(
+        <MonthFilter
+          month={month}
+          onChange={(value) =>
+            router.push(
+              documentsUrl(
+                clientId,
+                category,
+                batchId,
+                value,
+                accountId,
+                activeView,
+              ),
+            )
+          }
+          unknownHref={documentsUrl(
             clientId,
             category,
             batchId,
@@ -382,11 +377,7 @@ export function DocumentsPage({
             accountId,
             "files",
           )}
-        >
-          Período a confirmar
-        </Link>
-        <Link
-          href={documentsUrl(
+          allHref={documentsUrl(
             clientId,
             category,
             batchId,
@@ -394,9 +385,10 @@ export function DocumentsPage({
             accountId,
             activeView,
           )}
-        >
-          {activeView === "conference" ? "Mês mais recente" : "Todos os meses"}
-        </Link>
+          allLabel={
+            activeView === "conference" ? "Mês mais recente" : "Todos os meses"
+          }
+        />
       </div>
       {batchId && (
         <div className={styles.notice}>

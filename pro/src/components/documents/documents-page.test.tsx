@@ -116,9 +116,8 @@ describe("Documentos", () => {
       />,
     );
     await screen.findByLabelText("Mês de trabalho");
-    fireEvent.change(screen.getByLabelText("Mês de trabalho"), {
-      target: { value: "2026-08" },
-    });
+    fireEvent.click(screen.getByLabelText("Mês de trabalho"));
+    fireEvent.click(screen.getByRole("button", { name: "Agosto" }));
     expect(push).toHaveBeenCalledWith(
       "/documents?client=client_a&month=2026-08&view=delivery",
     );
