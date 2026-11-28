@@ -61,7 +61,8 @@ def test_source_and_movement_edits_require_new_confirmation(database):
         service.link_document(scope.actor_id, scope.client_id, movement, job_id=job, source=evidence["source"],
                               movement_version=1, operation_id="stale")
     with service.repo._connect() as conn:
-        conn.execute(f"UPDATE {service.repo.p}conversion_jobs SET updated_at=clock_timestamp() WHERE job_id=%s", (job,))
+        conn.execute(f"""UPDATE {service.repo.p}conversion_jobs SET updated_at=clock_timestamp(),
+            result_payload=jsonb_set(result_payload,'{{analysis,updated_at}}',to_jsonb(clock_timestamp()::text)) WHERE job_id=%s""", (job,))
     with pytest.raises(AnalysisEditConflictError):
         service.link_document(scope.actor_id, scope.client_id, movement, job_id=job, source=evidence["source"],
                               movement_version=2, operation_id="stale-doc")
@@ -156,6 +157,10 @@ def test_migration_rollback_reupgrade_and_cleanup_preserve_existing_jobs(databas
 
 
 def test_real_http_confirmation_undo_conflict_and_owner_checks(database, tmp_path, monkeypatch):
+    import json
+
+    from app.adapters.conversion.canonical_artifacts import LocalCanonicalObjects
+    from app.adapters.conversion.document_retention import analysis_retention_resolver
     from app.application import ReportService, TempAnalysisStorage
     from app.application.canonical_pro import CanonicalProService
     from app.dependencies import (
@@ -165,16 +170,22 @@ def test_real_http_confirmation_undo_conflict_and_owner_checks(database, tmp_pat
         get_report_service,
     )
     from app.main import app
-    from app.routers import canonical_pro, financial_center
+    from app.routers import canonical_pro, document_preparation, financial_center
     from tests.http_runtime import LoopbackClient
     from tests.test_convert_edits_http_real_api import _run_http_server
 
     service, scope, movement, job = setup(database)
-    canonical = CanonicalProService(service.repo, None)
+    canonical = CanonicalProService(service.repo, LocalCanonicalObjects(tmp_path / 'canonical'))
     monkeypatch.setenv("PRO_FINANCIAL_CENTER_ENABLED", "true")
     monkeypatch.setattr(financial_center, "get_canonical_pro_service", lambda: canonical)
     monkeypatch.setattr(canonical_pro, "get_canonical_pro_service", lambda: canonical)
-    report = ReportService(TempAnalysisStorage(tmp_path / "legacy"))
+    monkeypatch.setattr(document_preparation, "get_canonical_pro_service", lambda: canonical)
+    storage = TempAnalysisStorage(tmp_path / "legacy", retention_resolver=analysis_retention_resolver(DSN, service.repo.schema))
+    metadata = storage.root_dir / scope.analysis_id / 'analysis.json'
+    metadata.parent.mkdir()
+    metadata.write_text(json.dumps(database[2]), encoding='utf-8')
+    storage.fence_canonical_analysis(scope.analysis_id)
+    report = ReportService(storage)
     def configure(_):
         app.dependency_overrides[get_access_control_service] = lambda: service.repo.test_access
         app.dependency_overrides[get_conversion_batch_service] = lambda: SimpleNamespace(repository=database[4])
@@ -184,6 +195,12 @@ def test_real_http_confirmation_undo_conflict_and_owner_checks(database, tmp_pat
         "Authorization": f"Bearer {service.repo.test_user.token}", "Origin": "http://localhost:3000",
         "X-OFX-Pro-Client": "web",
     }) as client:
+        prepared = client.post(f'/api/pro/documents/{job}/preparation', json={})
+        assert prepared.status_code == 200, prepared.text
+        assert prepared.json()['context']['client_id'] == scope.client_id
+        assert prepared.json()['matching']['matches'][0]['automatic'] is False
+        assert client.get('/api/pro/documents/retention').json()['retained_while_paid'] is True
+        assert client.get('/api/pro/documents/absent/preparation').status_code == 404
         root = f"/api/pro/documents/conference/{scope.client_id}"
         evidence = client.get(f"{root}/documents/{job}")
         assert evidence.status_code == 200, evidence.text
@@ -203,3 +220,81 @@ def test_real_http_confirmation_undo_conflict_and_owner_checks(database, tmp_pat
         assert client.post(f"{root}/movements/{movement}/links", json={**request, "unexpected": True}).status_code == 400
         assert client.post(f"{root}/movements/{movement}/links", json=request,
                            headers={"Origin": "https://untrusted.example", "X-OFX-Pro-Client": ""}).status_code == 403
+        with service.repo._connect() as conn:
+            conn.execute(f"UPDATE {service.repo.p}conversion_jobs SET product='pro',expires_at=expires_at")
+            conn.execute(f"UPDATE {service.repo.p}user_plan_subscriptions SET status='ended',ended_at=%s WHERE user_id=%s",
+                         (datetime.now(timezone.utc).isoformat(), scope.actor_id))
+        policy = client.get('/api/pro/documents/retention')
+        assert policy.status_code == 200 and policy.json()['read_only'] is True
+        assert client.get(f'/api/pro/documents/{job}/preparation').status_code == 200
+        assert client.post(f'/api/pro/documents/{job}/preparation', json={}).status_code == 403
+        assert client.post('/api/pro/conversion-batches', headers={'Idempotency-Key': 'ended-plan'}, json={'files': [{
+            'filename': 'novo.csv', 'content_type': 'text/csv', 'size_bytes': 1, 'sha256_hex': 'a'*64}]}).status_code == 403
+        resolve_identity = service.repo.test_access.resolve_identity
+        monkeypatch.setattr(service.repo.test_access, 'resolve_identity',
+                            lambda **kwargs: replace(resolve_identity(**kwargs), batch_conversion_enabled=False))
+        download = client.get(f'/convert-report/{scope.analysis_id}', params={'format': 'csv'})
+        assert download.status_code == 200, download.text
+        from app.application.errors import AnalysisAccessDeniedError
+        assert canonical.read(scope)['preview_transactions']
+        with pytest.raises(AnalysisAccessDeniedError):
+            canonical.edit(scope, [], expected_version=1, operation_id='grace-edit')
+
+
+def test_review_and_renewal_keep_documentary_links_but_financial_edits_do_not(database):
+    service, scope, movement, job = setup(database)
+    evidence = service.document(scope.actor_id, scope.client_id, job)
+    service.link_document(scope.actor_id, scope.client_id, movement, job_id=job, source=evidence['source'],
+                          movement_version=1, operation_id='initial-link')
+    with service.repo._connect() as conn:
+        conn.execute(f"UPDATE {service.repo.p}conversion_jobs SET product='pro',expires_at=expires_at")
+    database[4].mark_reviewed(job, reviewed_at=datetime.now(timezone.utc).isoformat())
+    assert service.document(scope.actor_id, scope.client_id, job)['source'] == evidence['source']
+    assert service.movement_links(scope.actor_id, scope.client_id, movement)['links'][0]['state'] == 'confirmed'
+    from app.application.office_documents import OfficeReviews
+    from app.routers.office_documents import describe
+    info = describe(database[4].get(job), database[5].contexts(scope.actor_id, [job])[job],
+                    OfficeReviews(service.repo.test_access.db), scope.actor_id)
+    assert info['verification']['status'] == 'verified'
+    # One confirmation in the converter is sufficient for document delivery.
+    with service.repo._connect() as conn:
+        assert conn.execute(f'SELECT count(*) AS n FROM {service.repo.p}pro_document_reviews').fetchone()['n'] == 0
+
+
+def test_unique_identifier_links_automatically_and_respects_manual_undo(database):
+    service, scope, movement, job = setup(database)
+    identifier = 'E1234567820261127012345678901234'
+    record = database[4].get(job)
+    payload = deepcopy(record.result.payload)
+    financial = payload['analysis']['financial_document']
+    financial['metadata'] = {'currency': 'BRL'}
+    financial['observations'][0]['attributes']['transaction_id'] = identifier
+    with service.repo._connect() as conn:
+        conn.execute(f"UPDATE {service.repo.p}conversion_jobs SET result_payload=%s WHERE job_id=%s", (Jsonb(payload), job))
+        conn.execute(f"UPDATE {service.repo.p}bank_movements SET attributes=%s WHERE id=%s",
+                     (Jsonb({'document_number': identifier}), movement))
+    found = service.suggestions(scope.actor_id, scope.client_id, job, automatic=True)
+    assert len(found['matches']) == 1
+    match = found['matches'][0]
+    assert match['automatic'] and match['linked']
+    service.unlink_document(scope.actor_id, scope.client_id, movement, match['link_id'],
+                            expected_version=match['link_version'], operation_id='manual-undo')
+    repeated = service.suggestions(scope.actor_id, scope.client_id, job, automatic=True)
+    assert not repeated['matches'][0]['linked']
+
+
+def test_preparation_associates_only_a_unique_strong_holder(database, monkeypatch):
+    from app.routers.document_preparation import preparation
+    service, scope, _, job = setup(database)
+    repo, organizations = service.repo, database[5]
+    payload = deepcopy(database[4].get(job).result.payload)
+    payload['organization_source'] = {'holder_tax_id': '11222333000181'}
+    with repo._connect() as conn:
+        conn.execute(f"UPDATE {repo.p}pro_clients SET tax_id='11222333000181' WHERE id=%s", (scope.client_id,))
+        conn.execute(f"UPDATE {repo.p}pro_conversion_contexts SET client_id=NULL,account_id=NULL WHERE job_id=%s", (job,))
+        conn.execute(f"UPDATE {repo.p}conversion_jobs SET result_payload=%s WHERE job_id=%s", (Jsonb(payload), job))
+    monkeypatch.setenv('PRO_FINANCIAL_CENTER_ENABLED', 'false')
+    batches = SimpleNamespace(repository=database[4])
+    result = preparation(job, scope.actor_id, organizations, batches, (), automatic=True)
+    assert result['automatically_associated'] and result['context']['client_id'] == scope.client_id
+    assert not preparation(job, scope.actor_id, organizations, batches, (), automatic=True)['automatically_associated']

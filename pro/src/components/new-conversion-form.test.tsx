@@ -38,7 +38,7 @@ describe("NewConversionForm", () => {
     );
     await waitFor(() =>
       expect(push).toHaveBeenCalledWith(
-        "/documents?batch=batch_import&client=client_a",
+        "/review/batch_import?return_to=%2Fdocuments%3Fbatch%3Dbatch_import%26client%3Dclient_a%26view%3Ddelivery",
       ),
     );
     fireEvent.click(
@@ -103,7 +103,9 @@ describe("NewConversionForm", () => {
     expect(service.createAndSubmit).toHaveBeenCalledExactlyOnceWith([first]);
     finish({ batchId: "batch-drop" });
     await waitFor(() =>
-      expect(push).toHaveBeenCalledWith("/documents?batch=batch-drop"),
+      expect(push).toHaveBeenCalledWith(
+        "/review/batch-drop?return_to=%2Fdocuments%3Fbatch%3Dbatch-drop%26view%3Ddelivery",
+      ),
     );
   });
   it("fixa Padrão na importação mesmo se o componente tinha PRO selecionado", async () => {
@@ -144,7 +146,7 @@ describe("NewConversionForm", () => {
     );
     await waitFor(() =>
       expect(push).toHaveBeenCalledWith(
-        "/documents?batch=standard-import&client=client_a",
+        "/review/standard-import?return_to=%2Fdocuments%3Fbatch%3Dstandard-import%26client%3Dclient_a%26view%3Ddelivery",
       ),
     );
     expect(service.createAndSubmit).toHaveBeenCalledExactlyOnceWith([file], {

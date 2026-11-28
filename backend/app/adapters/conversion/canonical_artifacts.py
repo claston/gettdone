@@ -52,7 +52,7 @@ class S3CanonicalObjects:
 
     def put(self, key, data):
         self.client.put_object(Bucket=self.bucket, Key=self._object(key), Body=data,
-                               IfNoneMatch="*", **self.encryption_options)
+                               IfNoneMatch="*", Tagging="ofx-retention=paid", **self.encryption_options)
 
     def get(self, key):
         response = self.client.get_object(Bucket=self.bucket, Key=self._object(key))

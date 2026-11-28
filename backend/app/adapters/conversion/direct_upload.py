@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from copy import copy
 from pathlib import PurePosixPath
 from typing import Any, Callable
 from uuid import uuid4
@@ -47,6 +48,12 @@ class S3DirectUploadService:
             raise ValueError("An S3 KMS key requires server-side encryption set to aws:kms.")
         self._s3_client = s3_client
         self.storage_key_factory = storage_key_factory or (lambda: f"doc_{uuid4().hex[:24]}")
+        self.retention = "temporary"
+
+    def for_product(self, product):
+        configured = copy(self)
+        configured.retention = "paid" if product == "pro" else "temporary"
+        return configured
 
     def prepare(
         self,
@@ -109,10 +116,13 @@ class S3DirectUploadService:
             "Content-Type": normalized_content_type,
             "x-amz-meta-sha256": document.sha256_hex,
         }
+        tagging = f"<Tagging><TagSet><Tag><Key>ofx-retention</Key><Value>{self.retention}</Value></Tag></TagSet></Tagging>"
+        fields["tagging"] = tagging
         conditions: list[object] = [
             ["content-length-range", 1, int(max_size_bytes)],
             {"Content-Type": normalized_content_type},
             {"x-amz-meta-sha256": document.sha256_hex},
+            {"tagging": tagging},
         ]
         if self.server_side_encryption:
             fields["x-amz-server-side-encryption"] = self.server_side_encryption

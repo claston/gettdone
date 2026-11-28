@@ -75,6 +75,7 @@ class CreateConversionBatchRequest(BaseModel):
 
 
 class ConversionBatchIdentityRequest(BaseModel):
+    preparation_context_version: int | None = Field(default=None, ge=1, strict=True)
     expected_version: int | None = Field(default=None, ge=1, strict=True)
     operation_id: str | None = Field(default=None, max_length=100)
     expected_updated_at: str | None = None
@@ -221,6 +222,7 @@ def create_conversion_batch(
         identity,
         files_count=len(request.files),
         pro_endpoint=_is_pro_batch_request(http_request),
+        access=access_control_service,
     )
     active_service = _require_direct_batch(
         runtime,
@@ -338,7 +340,7 @@ def submit_conversion_batch(
         access_cookie_token=access_cookie_token,
     )
     if _is_pro_batch_request(http_request):
-        _require_batch_entitlement(identity, pro_endpoint=True)
+        _require_batch_entitlement(identity, pro_endpoint=True, access=access_control_service)
     active_service = _require_direct_batch(
         runtime,
         service,
@@ -356,7 +358,8 @@ def submit_conversion_batch(
     _require_batch_entitlement(
         identity,
         files_count=len(existing.jobs),
-        pro_endpoint=_is_pro_batch_request(http_request),
+        pro_endpoint=_is_pro_batch_request(http_request) or any(item.job.product == 'pro' for item in existing.jobs),
+        access=access_control_service,
     )
     trace_id = (x_request_id or "").strip()[:128] or f"trace-{uuid4().hex}"
     try:
@@ -593,6 +596,21 @@ def review_conversion_job(
         raise HTTPException(status_code=404, detail="Conversion batch not found.")
     try:
         record = next(item for item in snapshot.jobs if item.job.job_id == job_id)
+        from app.application.document_retention import can_edit_documents
+        if record.job.product == 'pro' and not can_edit_documents(access_control_service, identity.identity_id):
+            raise HTTPException(403, 'Renove seu plano para revisar. '
+                                'Seus documentos continuam disponíveis para consulta e download durante o prazo de retenção.')
+        if request.preparation_context_version is not None:
+            from app.application.pro_organization import OrganizationService
+            from app.routers.office_documents import current_record
+            context = OrganizationService(access_control_service.db).contexts(identity.identity_id, [job_id]).get(job_id, {})
+            if not context.get('client_id') or context.get('version') != request.preparation_context_version:
+                raise HTTPException(409, 'A associação ao cliente mudou. Confira o cliente antes de confirmar a importação.')
+            current = current_record(record, identity.identity_id,
+                (get_async_conversion_report_service(), get_report_service()))
+            updated = ((current.result.payload or {}).get('analysis') or {}).get('updated_at') if current.result else None
+            if request.expected_updated_at and updated and request.expected_updated_at != updated:
+                raise AnalysisEditConflictError
         canonical = resolve_canonical(identity, record.result.analysis_id) if record.result else None
         if canonical:
             saved = canonical.canonical.edit(canonical.scope, [], mark_reviewed=True,
@@ -644,6 +662,11 @@ def retry_conversion_job(
         access_control_service=access_control_service,
     )
     try:
+        retry_record = active_service.repository.get(job_id)
+        from app.application.document_retention import can_edit_documents
+        if (retry_record and retry_record.job.identity.identity_id == identity.identity_id
+                and retry_record.job.product == 'pro' and not can_edit_documents(access_control_service, identity.identity_id)):
+            raise HTTPException(403, 'Renove seu plano para processar documentos novamente.')
         snapshot = active_service.retry(
             batch_id=batch_id,
             job_id=job_id,
@@ -929,11 +952,15 @@ def _require_batch_entitlement(
     *,
     files_count: int | None = None,
     pro_endpoint: bool = False,
+    access: AccessControlService | None = None,
 ) -> None:
     is_multi_file = files_count is not None and files_count > 1
     if not pro_endpoint and not is_multi_file:
         return
-    if identity.identity_type != "user" or not identity.batch_conversion_enabled:
+    from app.application.document_retention import can_edit_documents
+    current_plan = identity.identity_type == 'user' and identity.batch_conversion_enabled and (
+        access is None or can_edit_documents(access, identity.identity_id))
+    if identity.identity_type != "user" or not current_plan:
         raise HTTPException(
             status_code=403,
             detail={

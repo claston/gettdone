@@ -89,10 +89,15 @@ def validate_export_checks(checks):
             raise HTTPException(403, "O acesso ativo ao PRO é necessário.") from None
 
 
-def resolve_canonical(identity, analysis_id):
+def resolve_canonical(identity, analysis_id, *, access=None):
     # Anonymous and Free reads do not depend on the canonical schema or service.
-    if identity.identity_type != "user" or not identity.batch_conversion_enabled:
+    if identity.identity_type != "user":
         return None
+    if not identity.batch_conversion_enabled:
+        from app.application.document_retention import read_retention
+        deadline = read_retention(access, identity.identity_id) if access is not None else None
+        if deadline is None or deadline <= datetime.now(timezone.utc):
+            return None
     service = get_canonical_pro_service()
     if service is None:
         return None

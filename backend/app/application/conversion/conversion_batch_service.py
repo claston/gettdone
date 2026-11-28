@@ -68,8 +68,10 @@ class ConversionBatchService:
             files_count=len(files),
             idempotency_key=normalized_idempotency_key,
         )
+        uploads_service = (self.direct_upload_service.for_product(product)
+                           if hasattr(self.direct_upload_service, "for_product") else self.direct_upload_service)
         initially_prepared = [
-            self.direct_upload_service.prepare(
+            uploads_service.prepare(
                 filename=item.filename,
                 content_type=item.content_type,
                 size_bytes=item.size_bytes,
@@ -97,7 +99,7 @@ class ConversionBatchService:
                 raise ValueError("Idempotency key was already used with a different conversion mode.")
             self._validate_idempotent_files(submission.snapshot, files)
             initially_prepared = [
-                self.direct_upload_service.prepare_reference(
+                uploads_service.prepare_reference(
                     document=record.job.document,
                     content_type=canonical_document_content_type(record.job.document.file_type),
                     max_size_bytes=identity.max_upload_size_bytes,

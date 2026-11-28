@@ -2,6 +2,7 @@
 import hashlib
 import json
 import re
+from copy import deepcopy
 from datetime import date, datetime, timezone
 
 from app.application.pro_organization import OrganizationConflict, OrganizationService
@@ -9,6 +10,24 @@ from app.application.pro_organization import OrganizationConflict, OrganizationS
 
 def fingerprint(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, default=str, ensure_ascii=False).encode()).hexdigest()
+
+
+def source_payload(payload, *, legacy=False):
+    """Lifetime and review acknowledgements are not changes to extracted evidence."""
+    result = deepcopy(payload)
+    if not isinstance(result, dict):
+        return result
+    analysis = result.get('analysis')
+    if isinstance(analysis, dict):
+        original = analysis.pop('_retention_original_expires_at', None)
+        analysis.pop('retention_job_id', None)
+        if legacy and original:
+            analysis['expires_at'] = original
+        elif not legacy:
+            analysis.pop('expires_at', None)
+    if not legacy:
+        result.pop('reviewed_at', None)
+    return result
 
 
 def _date(value):
@@ -40,8 +59,8 @@ def matches_month(analysis, month):
     return bool(start and start[:7] <= month <= end[:7])
 
 
-def record_source(record, context):
-    return fingerprint({'payload': record.result.payload if record.result else None,
+def record_source(record, context, *, legacy=False):
+    return fingerprint({'payload': source_payload(record.result.payload, legacy=legacy) if record.result else None,
                         'status': str(record.status), 'sha256': record.job.document.sha256_hex,
                         'context': context, 'updated_at': record.updated_at})
 
@@ -77,7 +96,7 @@ class OfficeReviews(OrganizationService):
                 WHERE organization_id = ? AND job_id = ? AND version = ? AND expires_at > ?''',
                 (self._organization(conn, owner), job_id, version, self._now())))
 
-    def read(self, owner, job_id, source):
+    def read(self, owner, job_id, source, *, legacy_source=None):
         if getattr(self, '_cached_owner', None) == owner:
             row = self._review_rows.get(job_id)
         else:
@@ -90,7 +109,7 @@ class OfficeReviews(OrganizationService):
         if row is None:
             return {'status': 'pending', 'version': 0, 'document_type': None, 'actor': None, 'updated_at': None}
         result = {key: row[key] for key in ('status', 'version', 'document_type', 'actor', 'updated_at')}
-        if row['source'] != source:
+        if row['source'] not in {source, legacy_source}:
             result['status'] = 'pending'
         return result
 

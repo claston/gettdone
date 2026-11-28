@@ -23,7 +23,7 @@ class CanonicalProService:
         self.repository = repository
         self.artifacts = CanonicalArtifactService(repository, objects)
 
-    def assert_entitled(self, conn, actor_id):
+    def assert_entitled(self, conn, actor_id, *, read_only=False):
         repo = self.repository
         plan = conn.execute(f'''SELECT 1 FROM {repo.p}user_plan_subscriptions s
             JOIN {repo.p}plan_versions p ON p.id = s.plan_version_id
@@ -31,6 +31,9 @@ class CanonicalProService:
                 AND p.code = ANY(%s)
                 AND (s.ended_at IS NULL OR s.ended_at::timestamptz > CURRENT_TIMESTAMP)
                 AND (p.code <> 'escritorio_documentos' OR s.ended_at IS NOT NULL)''', (actor_id, sorted(PAID_PLANS))).fetchone()
+        if not plan and read_only:
+            plan = conn.execute(f'''SELECT 1 FROM {repo.p}pro_document_retention_accounts
+                WHERE owner_id=%s AND delete_after>CURRENT_TIMESTAMP''', (actor_id,)).fetchone()
         if not plan:
             raise AnalysisAccessDeniedError
 
@@ -41,7 +44,7 @@ class CanonicalProService:
                 JOIN {repo.p}pro_organizations o ON o.id = a.organization_id
                 WHERE a.analysis_id = %s AND o.owner_user_id = %s''', (analysis_id, actor_id)).fetchone()
             if row is not None:
-                self.assert_entitled(conn, actor_id)
+                self.assert_entitled(conn, actor_id, read_only=True)
         if row is None:
             return None
         scope = MovementScope(actor_id, row["organization_id"], row["job_id"], analysis_id, row["client_id"])
@@ -51,7 +54,7 @@ class CanonicalProService:
     def read(self, scope):
         repo = self.repository
         with repo._connect() as conn:
-            self.assert_entitled(conn, scope.actor_id)
+            self.assert_entitled(conn, scope.actor_id, read_only=True)
             analysis, _ = repo._analysis(conn, scope, for_read=True)
             if not analysis["read_enabled"]:
                 raise AnalysisEditConflictError

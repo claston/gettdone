@@ -13,6 +13,26 @@ import { WorkspaceScreen } from "./workspace-screen";
 
 afterEach(() => vi.useRealTimers());
 
+it("repete a confirmação com a associação atual após uma falha", async () => {
+  const repository = createMockWorkspaceRepository({ latencyMs: 0 });
+  const mark = vi
+    .spyOn(repository, "markReviewed")
+    .mockRejectedValueOnce(new Error("Tente novamente."));
+  const { result } = renderHook(() =>
+    useWorkspaceController("batch-setembro-2026", repository),
+  );
+  await waitFor(() => expect(result.current.loadState).toBe("READY"));
+  const id = result.current.activeConversion!.id;
+  const initial = vi.fn().mockResolvedValue(1);
+  await act(async () => result.current.markReviewed(initial));
+  expect(result.current.actionError).toBe("Tente novamente.");
+  const current = vi.fn().mockResolvedValue(2);
+  act(() => result.current.retryAction(current));
+  await waitFor(() => expect(mark).toHaveBeenLastCalledWith(id, 2));
+  expect(initial).toHaveBeenCalledTimes(1);
+  expect(current).toHaveBeenCalledWith(id);
+});
+
 it("explica a falha PRO e orienta novo envio sem oferecer retry pago", async () => {
   const repository = createMockWorkspaceRepository({ latencyMs: 0 });
   const batch = await repository.getBatch("batch-setembro-2026");

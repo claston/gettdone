@@ -100,6 +100,13 @@ def run(base):
                 held_documents.append(route)
                 return
             route.fulfill(json=document_page(query))
+        elif path == '/api/pro/documents/retention':
+            route.fulfill(json={'read_only': False, 'retained_while_paid': True, 'delete_after': None, 'grace_days': 30})
+        elif path.endswith('/preparation'):
+            item = next(item for item in documents if f"/{item['job_id']}/" in path)
+            route.fulfill(json={'job_id': item['job_id'], 'batch_id': item['batch_id'], 'filename': item['filename'],
+                'context': item['context'], 'catalog': catalog, 'suggestions': {'clients': [], 'accounts': [], 'period': None},
+                'automatically_associated': False, 'matching': None, 'is_bank': item['category'] == 'statements'})
         elif path.endswith("/fiscal"):
             assert path == "/api/pro/financial-center/clients/client_browser/fiscal"
             route.fulfill(json=fiscal)
@@ -143,6 +150,12 @@ def run(base):
             route.fulfill(json={"batch_id": imported["batch_id"], "status": "completed"})
         elif path == "/api/pro/conversion-batches/batch_job_1":
             route.fulfill(json={"batch_id": "batch_job_1", "status": "completed", "jobs": [jobs[0]]})
+        elif path == '/api/pro/conversion-batches/batch_imported':
+            route.fulfill(json={'batch_id': imported['batch_id'], 'status': 'completed', 'jobs': [
+                {**jobs[0], 'job_id': imported['job_id'], 'filename': imported['filename'], 'analysis_id': 'an_imported'}]})
+        elif path.endswith('/document'):
+            from smoke_pro_pdf_sync import synthetic_pdf
+            route.fulfill(content_type='application/pdf', body=synthetic_pdf(1))
         elif path == "/api/pro/receipts/clients/client_browser/workspace":
             route.fulfill(json={"batch_id": "client_browser", "client_name": clients[0]["name"], "jobs": jobs, "next_cursor": None})
         elif path == "/api/pro/conversion-batches/batch_job_2/jobs/job_2/review":
@@ -217,7 +230,7 @@ def run(base):
 
             page.get_by_role("link", name="Padaria corrigida", exact=True).click()
             expect(page).to_have_url(base + "/documents?client=client_browser")
-            expect(page.get_by_role("status")).to_have_text("Carregando documentos…")
+            expect(page.get_by_role("status").filter(has_text="Carregando documentos…")).to_be_visible()
             loading["documents"] = False
             assert len(held_documents) == 1
             route = held_documents.pop()
@@ -238,8 +251,9 @@ def run(base):
             expect(page.get_by_role("button", name="Atualizar documentos", exact=True)).to_be_enabled()
             expect(types.get_by_role("link", name="Extratos", exact=True)).to_have_attribute("aria-current", "page")
             select_file("extrato-1.ofx")
-            page.get_by_role("article", name="extrato-1.ofx").get_by_role("link", name="Abrir revisão").click()
+            page.get_by_role("article", name="extrato-1.ofx").get_by_role("link", name="Revisar importação").click()
             expect(page.locator("tr[data-transaction-id='tx_1']")).to_be_visible()
+            expect(page.get_by_role('combobox', name='Cliente', exact=True)).to_have_value('client_browser')
             page.get_by_role("link", name="Voltar aos documentos", exact=True).click()
             expect(page).to_have_url(base + "/documents?client=client_browser&type=statements&view=files")
             types.get_by_role("link", name="Comprovantes", exact=True).click()
@@ -279,14 +293,18 @@ def run(base):
             upload.get_by_label("Selecionar arquivos").set_input_files({
                 "name": imported["filename"], "mimeType": "application/pdf", "buffer": b"%PDF-synthetic\n"})
             upload.get_by_role("button", name="Importar documentos", exact=True).click()
-            expect(page.get_by_role("article", name=imported["filename"])).to_be_visible()
-            assert parse_qs(urlsplit(page.url).query) == {"client": ["client_browser"], "batch": ["batch_imported"]}
+            expect(page.get_by_role('region', name='Revisão da importação')).to_be_visible()
+            expect(page.get_by_role('combobox', name='Cliente', exact=True)).to_have_value('client_browser')
+            destination = parse_qs(urlsplit(page.url).query)['return_to'][0]
+            assert parse_qs(urlsplit(destination).query) == {
+                'client': ['client_browser'], 'batch': ['batch_imported'], 'view': ['delivery']}
             assert imported["context"]["client_id"] == clients[0]["id"]
             assert not any(path.endswith("/confirm") for path in writes)
             expect(page.get_by_role("button", name="Confirmar associação ao cliente", exact=True)).to_have_count(0)
-            expect(page.get_by_role("article", name=imported["filename"])).to_contain_text("Padaria corrigida")
             assert imported["context"]["version"] == 1
+            page.get_by_role('link', name='Voltar aos documentos', exact=True).click()
             page.get_by_role("link", name="Ver todos os documentos do cliente", exact=True).click()
+            page.get_by_role('button', name='Arquivos', exact=True).click()
             client_files.append(imported["filename"])
             expect_files(client_files)
             select_file(imported["filename"])
@@ -339,7 +357,7 @@ def run(base):
             for legacy in ("/clients", "/periods", "/works", "/works/work_hidden"):
                 page.goto(base + legacy)
                 expect(page).to_have_url(base + "/dashboard")
-            assert len(writes) == 7 and not errors and not unexpected, (writes, errors, unexpected)
+            assert len(writes) == 9 and not errors and not unexpected, (writes, errors, unexpected)
             summary = {"result": "PASS", "writes": writes, "browser_errors": errors, "unexpected_requests": unexpected,
                        "checks": ["client and document loading", "client roster without documents", "accent and tax ID search",
                                   "client creation and optimistic edit", "explicit refresh across filters", "document categories",

@@ -68,17 +68,22 @@ def _build_conversion_document_store(*, backend_root: Path) -> ConversionDocumen
 
 
 def _build_analysis_storage(*, backend_root: Path):
+    from app.adapters.conversion.document_retention import analysis_retention_resolver
+
+    retention = analysis_retention_resolver(os.getenv("DATABASE_URL", ""), os.getenv("DATABASE_SCHEMA", "public"))
     mode = os.getenv("ANALYSIS_STORAGE", "filesystem").strip().lower()
     ttl_seconds = int(os.getenv("ANALYSIS_TTL_SECONDS", "86400"))
     if mode == "filesystem":
         return TempAnalysisStorage(
             root_dir=backend_root / "tmp" / "analyses",
             ttl_seconds=ttl_seconds,
+            retention_resolver=retention,
         )
     if mode == "s3":
         return S3AnalysisStorage(
             root_dir=backend_root / "tmp" / "analyses",
             ttl_seconds=ttl_seconds,
+            retention_resolver=retention,
             bucket=os.getenv("CONVERSION_S3_BUCKET", ""),
             prefix=os.getenv("CONVERSION_RESULTS_S3_PREFIX", "conversion/results"),
             region=os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION"),
@@ -244,10 +249,13 @@ def get_async_conversion_report_service() -> ReportService | None:
     if os.getenv("ANALYSIS_STORAGE", "filesystem").strip().lower() == "s3":
         return _report_service
     if _async_conversion_report_service is None:
+        from app.adapters.conversion.document_retention import analysis_retention_resolver
+
         _async_conversion_report_service = ReportService(
             storage=S3AnalysisStorage(
                 root_dir=_backend_root / "tmp" / "async_analyses",
                 ttl_seconds=int(os.getenv("ANALYSIS_TTL_SECONDS", "86400")),
+                retention_resolver=analysis_retention_resolver(os.getenv("DATABASE_URL", ""), os.getenv("DATABASE_SCHEMA", "public")),
                 bucket=os.getenv("CONVERSION_S3_BUCKET", ""),
                 prefix=os.getenv("CONVERSION_RESULTS_S3_PREFIX", "conversion/results"),
                 region=os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION"),

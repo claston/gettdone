@@ -1,4 +1,46 @@
 import { createProApiClient, readApiError } from "./pro-api-client";
+import type {
+  ConversionContext,
+  OrganizationCatalog,
+  OrganizationSuggestions,
+} from "./organization-service";
+
+export interface RetentionPolicy {
+  read_only: boolean;
+  retained_while_paid: boolean;
+  delete_after: string | null;
+  grace_days: number;
+}
+export interface ImportPreparation {
+  job_id: string;
+  batch_id: string;
+  filename: string;
+  context: ConversionContext;
+  catalog: OrganizationCatalog;
+  suggestions: OrganizationSuggestions;
+  automatically_associated: boolean;
+  organization_locked?: boolean;
+  identity_notice?: string | null;
+  is_bank: boolean;
+  matching: null | {
+    source?: string;
+    notice?: string;
+    partial: boolean;
+    matches: Array<{
+      id: string;
+      version: number;
+      date: string;
+      amount: string;
+      currency: string;
+      description: string;
+      automatic: boolean;
+      linked: boolean;
+      evidence: string[];
+      link_id: string | null;
+      link_version: number | null;
+    }>;
+  };
+}
 
 const api = createProApiClient({
   apiUrl: process.env.NEXT_PUBLIC_API_URL ?? "/",
@@ -52,6 +94,22 @@ async function request(path: string, body?: unknown, signal?: AbortSignal) {
   return response;
 }
 export const officeService = {
+  async retention(signal?: AbortSignal): Promise<RetentionPolicy> {
+    return (await request("/retention", undefined, signal)).json();
+  },
+  async prepare(
+    job: string,
+    readOnly = false,
+    signal?: AbortSignal,
+  ): Promise<ImportPreparation> {
+    return (
+      await request(
+        `/${encodeURIComponent(job)}/preparation`,
+        readOnly ? undefined : {},
+        signal,
+      )
+    ).json();
+  },
   async verify(
     job: string,
     body: {

@@ -108,6 +108,7 @@ class S3ConversionDocumentStore:
             "ContentLength": document.size_bytes,
             "ContentType": _content_type(reference.file_type),
             "Metadata": {"sha256": reference.sha256_hex},
+            "Tagging": "ofx-retention=temporary",
         }
         if self.server_side_encryption:
             params["ServerSideEncryption"] = self.server_side_encryption

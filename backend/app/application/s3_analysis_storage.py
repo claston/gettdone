@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -78,6 +79,13 @@ class S3AnalysisStorage(TempAnalysisStorage):
         return expires_at
 
     @locked_analysis
+    def retain_pro_analysis(self, analysis_id: str, job_id: str) -> str:
+        self._materialize_analysis(analysis_id)
+        deadline = super().retain_pro_analysis(analysis_id, job_id)
+        self._upload_analysis(analysis_id)
+        return deadline
+
+    @locked_analysis
     def read_canonical_candidate(self, analysis_id: str) -> dict:
         self._materialize_analysis(analysis_id)
         return super().read_canonical_candidate(analysis_id)
@@ -87,7 +95,8 @@ class S3AnalysisStorage(TempAnalysisStorage):
         content = super().fence_canonical_analysis(analysis_id, completion=completion)
         path = self._resolve_analysis_dir(analysis_id) / "analysis.json"
         params = {"Bucket": self.bucket, "Key": self._object_key(analysis_id, "analysis.json"),
-                  "Body": path.read_bytes(), "ContentType": "application/json"}
+                  "Body": path.read_bytes(), "ContentType": "application/json",
+                  "Tagging": self._retention_tag(path.parent)}
         if self.server_side_encryption:
             params["ServerSideEncryption"] = self.server_side_encryption
         if self.kms_key_id:
@@ -113,6 +122,17 @@ class S3AnalysisStorage(TempAnalysisStorage):
                 result = self._client().delete_objects(Bucket=self.bucket, Delete={"Objects": keys, "Quiet": True})
                 if result.get("Errors"):
                     raise RuntimeError("Canonical legacy artifact cleanup incomplete")
+
+    @locked_analysis
+    def delete_expired_pro_analysis(self, analysis_id: str) -> None:
+        super().delete_expired_pro_analysis(analysis_id)
+        prefix = self._object_key(analysis_id, "")
+        for page in self._client().get_paginator("list_objects_v2").paginate(Bucket=self.bucket, Prefix=prefix):
+            keys = [{"Key": item["Key"]} for item in page.get("Contents", [])]
+            if keys:
+                result = self._client().delete_objects(Bucket=self.bucket, Delete={"Objects": keys, "Quiet": True})
+                if result.get("Errors"):
+                    raise RuntimeError("PRO artifact cleanup incomplete")
 
     @locked_analysis
     def get_report_path(self, analysis_id: str) -> Path:
@@ -232,12 +252,20 @@ class S3AnalysisStorage(TempAnalysisStorage):
                 "Key": self._object_key(analysis_id, relative),
                 "Body": path.read_bytes(),
                 "ContentType": self._content_type(path.suffix.lower()),
+                "Tagging": self._retention_tag(analysis_dir),
             }
             if self.server_side_encryption:
                 params["ServerSideEncryption"] = self.server_side_encryption
             if self.kms_key_id:
                 params["SSEKMSKeyId"] = self.kms_key_id
             self._client().put_object(**params)
+
+    def _retention_tag(self, analysis_dir):
+        metadata = analysis_dir / "analysis.json"
+        content = json.loads(metadata.read_text(encoding="utf-8")) if metadata.exists() else {}
+        paid = content.get("retention_job_id") or (self.retention_resolver and
+            self.retention_resolver(content.get("analysis_id", analysis_dir.name), None) is not None)
+        return "ofx-retention=" + ("paid" if paid else "temporary")
 
     def _materialize_analysis(self, analysis_id: str) -> None:
         analysis_dir = self._resolve_analysis_dir(analysis_id)

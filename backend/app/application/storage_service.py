@@ -33,9 +33,11 @@ class TempAnalysisStorage(LegacyAnalysisState):
         ttl_seconds: int = 24 * 60 * 60,
         now_provider: Callable[[], datetime] | None = None,
         export_artifact_service: ExportArtifactService | None = None,
+        retention_resolver: Callable | None = None,
     ) -> None:
         self.root_dir = root_dir
         self.ttl_seconds = ttl_seconds
+        self.retention_resolver = retention_resolver
         self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
         self.export_artifact_service = export_artifact_service or ExportArtifactService()
         self.review_commands = ReviewCommandService(now_provider=lambda: self.now_provider())
@@ -641,6 +643,25 @@ class TempAnalysisStorage(LegacyAnalysisState):
         if owner_type != identity_type or owner_id != identity_id:
             raise AnalysisAccessDeniedError
 
+    @locked_analysis
+    def retain_pro_analysis(self, analysis_id: str, job_id: str) -> str:
+        """Persist job provenance; the current job deadline remains authoritative."""
+        content, path = self._read_analysis_metadata(analysis_id=analysis_id, metadata_filename="analysis.json")
+        if hasattr(self.retention_resolver, 'register'):
+            self.retention_resolver.register(analysis_id, job_id)
+        content["retention_job_id"] = job_id
+        self._apply_retention(content)
+        self._write_metadata(path, content)
+        return str(content["expires_at"])
+
+    def _apply_retention(self, content):
+        if self.retention_resolver and content.get("analysis_id"):
+            deadline = self.retention_resolver(content["analysis_id"], content.get("retention_job_id"))
+            if deadline is not None:
+                content.setdefault('_retention_original_expires_at', content.get('expires_at'))
+                content["expires_at"] = deadline.isoformat()
+        return content
+
     def _read_analysis_metadata(self, *, analysis_id: str, metadata_filename: str) -> tuple[dict[str, object], Path]:
         analysis_dir = self._resolve_analysis_dir(analysis_id)
         if self._is_expired(analysis_dir):
@@ -655,6 +676,7 @@ class TempAnalysisStorage(LegacyAnalysisState):
         except (OSError, json.JSONDecodeError):
             raise AnalysisNotFoundError from None
         if metadata_filename == "analysis.json":
+            self._apply_retention(content)
             self._assert_legacy_authority(content)
         return content, metadata_path
 
@@ -668,7 +690,7 @@ class TempAnalysisStorage(LegacyAnalysisState):
         """Internal recovery read, including a previous durable pending fence."""
         path = self._resolve_analysis_dir(analysis_id) / "analysis.json"
         try:
-            content = json.loads(path.read_text(encoding="utf-8"))
+            content = self._apply_retention(json.loads(path.read_text(encoding="utf-8")))
             expires_at = datetime.fromisoformat(content["expires_at"])
         except (OSError, KeyError, ValueError):
             raise AnalysisNotFoundError from None
@@ -703,7 +725,7 @@ class TempAnalysisStorage(LegacyAnalysisState):
         if not path.exists():
             return None
         try:
-            content = json.loads(path.read_text(encoding="utf-8"))
+            content = self._apply_retention(json.loads(path.read_text(encoding="utf-8")))
             if content.get("authority") not in {"canonical_pending", "postgres_v1"}:
                 return None
             expires_at = datetime.fromisoformat(content["expires_at"])
@@ -715,6 +737,11 @@ class TempAnalysisStorage(LegacyAnalysisState):
         if not isinstance(completion, dict):
             raise AnalysisEditConflictError
         return completion
+
+    @locked_analysis
+    def delete_expired_pro_analysis(self, analysis_id: str) -> None:
+        """Internal cleanup only; caller holds the expired PRO job's SQL lock."""
+        self._cleanup_analysis(self._resolve_analysis_dir(analysis_id))
 
     @locked_analysis
     def delete_canonical_analysis(self, analysis_id: str) -> None:
@@ -736,7 +763,7 @@ class TempAnalysisStorage(LegacyAnalysisState):
     def _is_expired(self, analysis_dir: Path) -> bool:
         metadata_path = analysis_dir / "analysis.json"
         try:
-            content = json.loads(metadata_path.read_text(encoding="utf-8"))
+            content = self._apply_retention(json.loads(metadata_path.read_text(encoding="utf-8")))
             expires_at_raw = content.get("expires_at")
             if not isinstance(expires_at_raw, str):
                 return False

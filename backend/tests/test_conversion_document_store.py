@@ -105,6 +105,7 @@ def test_s3_conversion_document_store_round_trips_with_private_encrypted_object(
             "ContentLength": document.size_bytes,
             "ContentType": "application/pdf",
             "Metadata": {"sha256": reference.sha256_hex},
+            "Tagging": "ofx-retention=temporary",
             "ServerSideEncryption": "AES256",
         }
     ]

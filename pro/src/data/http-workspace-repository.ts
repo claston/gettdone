@@ -765,7 +765,10 @@ export function createHttpWorkspaceRepository(
       validators.clear();
     },
 
-    async markReviewed(conversionId: string) {
+    async markReviewed(
+      conversionId: string,
+      preparationContextVersion?: number,
+    ) {
       const context = requireContext(contexts, conversionId);
       if (context.version && !context.pendingReview)
         context.pendingReview = JSON.stringify({
@@ -776,7 +779,15 @@ export function createHttpWorkspaceRepository(
         `/api/pro/conversion-batches/${encodeURIComponent(context.batchId)}/jobs/${encodeURIComponent(conversionId)}/review`,
         {
           method: "POST",
-          body: context.pendingReview ?? "{}",
+          body: JSON.stringify({
+            ...JSON.parse(context.pendingReview ?? "{}"),
+            ...(preparationContextVersion === undefined
+              ? {}
+              : {
+                  preparation_context_version: preparationContextVersion,
+                  expected_updated_at: context.updatedAt,
+                }),
+          }),
         },
       );
       if (context.version) {

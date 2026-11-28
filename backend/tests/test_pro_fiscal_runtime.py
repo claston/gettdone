@@ -64,12 +64,15 @@ def test_fiscal_sqs_routes_separately_and_retries_only_failed_records(monkeypatc
 
 
 def test_rollback_keeps_cleanup_active_without_dispatch(monkeypatch):
+    from app.workers import canonical_cleanup
+    monkeypatch.setattr(canonical_cleanup, 'worker_handler', lambda: {'expired_pro_documents_removed': 3, 'expired_analyses_removed': 1})
     monkeypatch.setenv("PRO_FISCAL_ENABLED", "false")
     monkeypatch.setattr(
         runtime,
         "build_pro_fiscal_service",
         lambda: SimpleNamespace(cleanup=lambda: 2, dispatch=lambda: pytest.fail("disabled imports must not dispatch")),
     )
-    assert lambda_handler({"action": "fiscal_maintenance"}, None) == {"fiscal_sources_removed": 2, "fiscal_messages_published": 0}
+    assert lambda_handler({"action": "fiscal_maintenance"}, None) == {
+        "fiscal_sources_removed": 2, "fiscal_messages_published": 0, 'expired_pro_documents_removed': 3, 'expired_analyses_removed': 1}
     with pytest.raises(RuntimeError, match="disabled"):
         runtime.process_fiscal_message({"import_id": str(uuid4())})

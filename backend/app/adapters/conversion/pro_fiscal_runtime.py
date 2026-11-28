@@ -42,6 +42,7 @@ class FiscalObjects:
     def prepare(self, reference):
         # Keep the converter's extension/content-type allowlist unchanged.
         fields = {
+            'tagging': '<Tagging><TagSet><Tag><Key>ofx-retention</Key><Value>paid</Value></Tag></TagSet></Tagging>',
             "Content-Type": "application/xml" if reference["file_type"] == "xml" else "application/pdf",
             "x-amz-meta-sha256": reference["sha256_hex"],
         }
@@ -158,4 +159,5 @@ def fiscal_maintenance():
     service = build_pro_fiscal_service()
     removed = service.cleanup()
     sent = service.dispatch() if read_bool_env("PRO_FISCAL_ENABLED", default=False) else 0
-    return {"fiscal_sources_removed": removed, "fiscal_messages_published": sent}
+    from app.workers.canonical_cleanup import worker_handler as cleanup_documents
+    return {"fiscal_sources_removed": removed, "fiscal_messages_published": sent, **cleanup_documents()}
