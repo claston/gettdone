@@ -194,6 +194,9 @@ def run(base):
             expect(navigation.get_by_role("link")).to_have_text(["Clientes", "Documentos", "Conversor"])
             expect(page.locator(".mobile-menu")).to_be_hidden()
             assert not writes, "Listing clients must not trigger synchronization or writes"
+            # Keep analytics opted out while exercising the client editor below the banner.
+            page.get_by_role("button", name="Recusar opcionais", exact=True).click()
+            expect(page.locator("#privacy-consent-banner")).to_be_hidden()
             search = page.get_by_role("searchbox", name="Buscar por nome, CPF ou CNPJ")
             for query in ("pada", "SAO JOSE", "12.345.678/0001-90", "12345678000190"):
                 search.fill(query)
