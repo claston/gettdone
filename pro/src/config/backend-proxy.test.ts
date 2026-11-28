@@ -16,6 +16,10 @@ describe("buildBackendProxyRewrites", () => {
           destination: "https://api.ofxsimples.com.br/telemetry/events",
         },
         {
+          source: "/telemetry/analytics",
+          destination: "https://api.ofxsimples.com.br/telemetry/analytics",
+        },
+        {
           source: "/api/conversion-runtime",
           destination: "https://api.ofxsimples.com.br/api/conversion-runtime",
         },

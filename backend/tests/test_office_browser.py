@@ -76,6 +76,8 @@ def test_client_month_select_preview_and_download_current_package(database, tmp_
                 route.continue_()
         page.route('**/*', forward)
         page.goto(f'{BROWSER_URL}/documents?client={scope.client_id}&month=2026-04')
+        page.get_by_role('button', name='Recusar opcionais', exact=True).click()
+        expect(page.locator('#privacy-consent-banner')).to_be_hidden()
         page.get_by_role('button', name='Entrega', exact=True).click(timeout=60000)
         expect(page.get_by_role('button', name='Conferir pacote (0)')).to_be_visible(timeout=60000)
         expect(page.get_by_label('Mês de trabalho')).to_have_value('2026-04')

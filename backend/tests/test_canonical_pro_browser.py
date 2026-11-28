@@ -80,6 +80,9 @@ def test_two_editors_compare_reapply_and_refresh(database, tmp_path, monkeypatch
         for page in (first, second):
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(f"{BROWSER_URL}/review/{batches.get(scope.job_id).job.batch_id}/{scope.job_id}")
+            if page is first:
+                page.get_by_role("button", name="Recusar opcionais", exact=True).click()
+                expect(page.locator("#privacy-consent-banner")).to_be_hidden()
             expect(page.get_by_role("table", name="Lançamentos extraídos")).to_be_visible(timeout=60000)
         local = second.locator("tr[data-transaction-id='stable'] input").nth(1)
         remote = first.locator("tr[data-transaction-id='stable'] input").nth(1)

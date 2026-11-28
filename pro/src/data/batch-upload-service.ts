@@ -104,6 +104,8 @@ export function createBatchUploadService(
       );
     }
 
+    if (typeof window !== "undefined")
+      window.OfxAnalytics?.capture("upload_started");
     const fileContracts = await Promise.all(
       files.map(async (file) => ({
         filename: file.name,

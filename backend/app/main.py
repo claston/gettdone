@@ -15,6 +15,7 @@ from app.dependencies import (
     close_conversion_capacity_controller,
     get_report_service,
 )
+from app.posthog_analytics import AnalyticsMiddleware
 from app.routers import (
     admin_auth_router,
     auth_router,
@@ -109,6 +110,7 @@ app.add_middleware(
     expose_headers=["ETag"],
 )
 app.add_middleware(UploadBodyLimitMiddleware)
+app.add_middleware(AnalyticsMiddleware)
 
 app.include_router(health_router)
 app.include_router(pro_fiscal_router)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from app.application.conversion.identity import IdentityContext
+from app.posthog_analytics import record_event
 
 WORKSPACE_EVENT_TYPES = frozenset({"workspace_opened", "conversion_selected", "suspicious_filter_used",
                                    "transaction_edited", "conversion_reviewed", "batch_export_requested"})
@@ -63,6 +64,11 @@ def record_product_event(
                 ),
             )
             conn.commit()
+    record_event(
+        normalized_event_type,
+        user_id=identity.identity_id if identity.identity_type == "user" else None,
+        page_path=page_path, plan_code=plan_code, download_format=normalized_format,
+    )
     return event_id
 
 

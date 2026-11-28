@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, status
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.application import AccessControlService, InvalidUserTokenError
 from app.application.product_telemetry import CLIENT_PRODUCT_EVENT_TYPES, WORKSPACE_EVENT_TYPES
 from app.dependencies import get_access_control_service
+from app.posthog_analytics import CLIENT_EVENTS, record_event
 from app.routers.auth_session import (
     ANONYMOUS_IDENTITY_COOKIE_NAME,
     SESSION_ACCESS_COOKIE_NAME,
@@ -15,6 +17,20 @@ from app.routers.pro_security import PRO_CLIENT_HEADER_NAME, require_pro_browser
 from app.schemas import ProductEventRequest
 
 router = APIRouter()
+
+
+class AnalyticsEventRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    event_type: str = Field(max_length=40)
+    page_path: str = Field(default="/other", max_length=200)
+
+
+@router.post("/telemetry/analytics", status_code=status.HTTP_202_ACCEPTED)
+def record_analytics_event(payload: AnalyticsEventRequest) -> Response:
+    if payload.event_type not in CLIENT_EVENTS:
+        raise HTTPException(status_code=400, detail="Evento de uso inválido.")
+    record_event(payload.event_type, page_path=payload.page_path)
+    return Response(status_code=202, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/telemetry/events", status_code=status.HTTP_202_ACCEPTED)

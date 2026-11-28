@@ -154,6 +154,9 @@ def run(base: str, *, save_receipt_delay_ms: int = 0):
             expect(page.locator("canvas").first).to_be_visible(timeout=60000)
             metrics["open_ms"] = round((time.perf_counter()-started)*1000)
             assert metrics["open_ms"] < 12000, metrics
+            # Resolve first-visit consent through the UI before testing workspace controls.
+            page.get_by_role("button", name="Recusar opcionais", exact=True).click()
+            expect(page.locator("#privacy-consent-banner")).to_be_hidden()
             assert page.get_by_role("listbox", name="Conversões do lote").get_by_role("option").count() == 12
             page.locator("canvas").first.evaluate("node => node.dataset.acceptance = 'original'")
 

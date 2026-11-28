@@ -30,5 +30,6 @@ doc/backlog-v1-conversor-pdf-multiformato.md
 .pr_body_*.md
 
 /pro/public/pdfjs/
+/pro/public/privacy-consent.js
 # Java artifacts are generated and tested by GitHub Actions.
 receita-worker/target/
